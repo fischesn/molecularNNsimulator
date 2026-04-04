@@ -1,33 +1,33 @@
 # DNA NN Simulator
 
-Dieses Repository enthält einen Python-Simulator für ein verteiltes DNA-/Molekularnetz-Szenario mit drei lokalen Entscheidungsstrategien (`RR`, `TR`, `EIR`), Gateway-Aggregation, Kalibrierung von Schwellenwerten sowie Export von CSV-Dateien und Plots.
+This repository contains a Python simulator for a distributed DNA/molecular network scenario with three local decision strategies (`RR`, `TR`, `EIR`), gateway aggregation, threshold calibration, and export of CSV files and plots.
 
-Die zentrale Datei ist:
+The main file is:
 
 - `dna-nn-simulator.py`
 
-Zusätzlich enthält das Repository einen Beispiel-Ordner `results/` mit bereits erzeugten Ergebnisdateien.
+In addition, the repository contains an example folder `results/` with precomputed output files.
 
-## 1. Voraussetzungen
+## 1. Requirements
 
-Benötigt wird eine aktuelle Python-Installation.
+A recent Python installation is required.
 
-Empfehlung:
+Recommended:
 
-- Python 3.10 oder neuer
-- `pip` verfügbar
+- Python 3.10 or newer
+- `pip` available
 
-Der Simulator verwendet genau diese externen Bibliotheken:
+The simulator uses exactly these external libraries:
 
 - `numpy`
 - `pandas`
 - `matplotlib`
 
-## 2. Virtuelle Umgebung anlegen und Bibliotheken installieren
+## 2. Create a Virtual Environment and Install the Libraries
 
 ### Windows PowerShell
 
-Im Repository-Verzeichnis:
+In the repository directory:
 
 ```powershell
 python -m venv .venv
@@ -36,7 +36,7 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Falls PowerShell das Aktivieren von Skripten blockiert, kann temporär z. B. Folgendes nötig sein:
+If PowerShell blocks script execution, you may need to temporarily run:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -44,7 +44,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ### Linux / macOS / Git Bash
 
-Im Repository-Verzeichnis:
+In the repository directory:
 
 ```bash
 python3 -m venv .venv
@@ -53,9 +53,9 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-## 3. Repository-Struktur
+## 3. Repository Structure
 
-Die ZIP-Datei enthält in der vorliegenden Form im Wesentlichen:
+In its current form, the ZIP file essentially contains:
 
 ```text
 .
@@ -86,267 +86,265 @@ Die ZIP-Datei enthält in der vorliegenden Form im Wesentlichen:
         └── local_distance_send_profiles.png
 ```
 
-## 4. Simulator aufrufen
+## 4. Running the Simulator
 
-Der Simulator wird direkt über das Python-Skript gestartet:
+The simulator is started directly via the Python script:
 
 ```bash
-python dna-nn-simulator.py [OPTIONEN]
+python dna-nn-simulator.py [OPTIONS]
 ```
 
-Verfügbare relevante Optionen:
+Relevant available options:
 
 - `--diagnostics`  
-  Führt lokale Diagnostik und Zustandsdynamik-Diagnostik aus.
+  Runs local diagnostics and state-dynamics diagnostics.
 - `--demo`  
-  Führt die vollständigen Sweeps aus und erzeugt die Demo-Plots.
-- `--output-dir <PFAD>`  
-  Zielverzeichnis für die Ausgaben. Standard ist `sim_output`.
+  Runs the full parameter sweeps and generates the demo plots.
+- `--output-dir <PATH>`  
+  Target directory for the outputs. Default is `sim_output`.
 - `--num-samples <N>`  
-  Anzahl lokaler Samples pro Zustand für die Diagnostik. Standard: `5000`.
+  Number of local samples per state for diagnostics. Default: `5000`.
 - `--num-trials-state <N>`  
-  Anzahl State-Dynamics-Trials in der Diagnostik. Standard: `100`.
+  Number of state-dynamics trials in diagnostics. Default: `100`.
 
-### 4.1 Diagnostik-Modus
+### 4.1 Diagnostics Mode
 
-Beispiel:
+Example:
 
 ```bash
 python dna-nn-simulator.py --diagnostics --output-dir results
 ```
 
-Dabei werden Diagnostikdateien im Unterordner
+This creates diagnostic files in the subdirectory:
 
 ```text
 results/diagnostics/
 ```
 
-erzeugt.
-
-Optional können die Stichprobengröße und die Zahl der State-Trials angepasst werden:
+Optionally, the sample size and the number of state trials can be adjusted:
 
 ```bash
 python dna-nn-simulator.py --diagnostics --output-dir results --num-samples 5000 --num-trials-state 100
 ```
 
-### 4.2 Demo-Modus
+### 4.2 Demo Mode
 
-Beispiel:
+Example:
 
 ```bash
 python dna-nn-simulator.py --demo --output-dir results
 ```
 
-Dabei erzeugt der Simulator die Hauptausgaben direkt in:
+This writes the main outputs directly to:
 
 ```text
 results/
 ```
 
-Der Demo-Modus umfasst:
+The demo mode includes:
 
-- eine Baseline-Simulation,
-- Kalibrierung lokaler und Gateway-Schwellen,
-- Trial-Export,
-- Zusammenfassungsdatei,
-- mehrere Parametersweeps,
-- Plot-Erzeugung.
+- a baseline simulation,
+- calibration of local and gateway thresholds,
+- trial export,
+- a summary file,
+- multiple parameter sweeps,
+- plot generation.
 
-### 4.3 Kombination beider Modi
+### 4.3 Combination of Both Modes
 
-Beide Flags können auch gemeinsam verwendet werden:
+Both flags can also be used together:
 
 ```bash
 python dna-nn-simulator.py --diagnostics --demo --output-dir results
 ```
 
-Dann entstehen:
+This produces:
 
-- Demo-Ergebnisse in `results/`
-- Diagnostik-Ergebnisse in `results/diagnostics/`
+- demo results in `results/`
+- diagnostics results in `results/diagnostics/`
 
-### 4.4 Standardlauf ohne Flags
+### 4.4 Default Run Without Flags
 
-Ohne `--diagnostics` und ohne `--demo` führt das Skript einen kleineren Standardlauf aus:
+Without `--diagnostics` and without `--demo`, the script performs a smaller default run:
 
 ```bash
 python dna-nn-simulator.py --output-dir sim_output
 ```
 
-Dabei werden vor allem `summary.csv` und `calibration.json` geschrieben.
+This primarily writes `summary.csv` and `calibration.json`.
 
-## 5. Was der Simulator inhaltlich macht
+## 5. What the Simulator Does
 
-Der Simulator vergleicht drei lokale Entscheidungsstrategien:
+The simulator compares three local decision strategies:
 
-- **RR**: Alarm, wenn mindestens einer von zwei Markern über seinem Schwellenwert liegt.
-- **TR**: Alarm basierend auf dem ersten Marker (`x1`) und einem einzelnen Schwellenwert.
-- **EIR**: Alarm auf Basis einer gewichteten linearen Kombination der Marker (`w1*x1 + w2*x2`) mit optionalem Gate auf `x2`.
+- **RR**: alarm if at least one of the two markers exceeds its threshold.
+- **TR**: alarm based on the first marker (`x1`) and a single threshold.
+- **EIR**: alarm based on a weighted linear combination of the markers (`w1*x1 + w2*x2`) with an optional gate on `x2`.
 
-Auf lokaler Ebene werden Markerwerte erzeugt, daraus lokale Entscheidungen abgeleitet und eventuelle Alarmemissionen an ein Gateway weitergegeben. Auf Gateway-Ebene wird dann geprüft, ob eine globale Detektion vorliegt.
+At the local level, marker values are generated, local decisions are derived, and potential alarm emissions are transmitted to a gateway. At the gateway level, the simulator then decides whether a global detection is present.
 
-## 6. Erklärung der Ergebnisdateien
+## 6. Explanation of the Output Files
 
-## 6.1 Hauptausgaben im Demo-/Standardlauf
+## 6.1 Main Outputs in Demo/Default Mode
 
 ### `calibration.json`
-JSON-Datei mit:
+A JSON file containing:
 
-- der vollständigen verwendeten Simulationskonfiguration,
-- den kalibrierten lokalen Schwellenwerten,
-- den kalibrierten Gateway-Schwellenwerten.
+- the full simulation configuration used,
+- the calibrated local thresholds,
+- the calibrated gateway thresholds.
 
-Diese Datei ist die wichtigste Referenz, um eine Simulation später reproduzierbar nachzuvollziehen.
+This is the most important reference file for reproducing a simulation later.
 
 ### `summary.csv`
-Aggregierte Ergebnisübersicht mit genau einer Zeile pro Strategie (`RR`, `TR`, `EIR`).
+An aggregated result overview with exactly one row per strategy (`RR`, `TR`, `EIR`).
 
-Wichtige Spalten:
+Important columns:
 
-- `P_D`: Detektionswahrscheinlichkeit unter H1
-- `P_pre_onset_alarm`: Wahrscheinlichkeit eines Alarms vor dem eigentlichen Onset unter H1
-- `P_FA`: Falschalarmwahrscheinlichkeit unter H0
-- `C_total_molecules_avg`: mittlere gesamte Kommunikationslast
-- `C_H0_molecules_avg`: mittlere Kommunikationslast unter H0
-- `C_H1_molecules_avg`: mittlere Kommunikationslast unter H1
-- `R_H1_molecules_per_s`: mittlere Kommunikationsrate bis zur Detektion unter H1
-- `D_avg_after_onset`: mittlere Detektionsverzögerung nach Onset
+- `P_D`: detection probability under H1
+- `P_pre_onset_alarm`: probability of an alarm before the actual onset under H1
+- `P_FA`: false alarm probability under H0
+- `C_total_molecules_avg`: average total communication load
+- `C_H0_molecules_avg`: average communication load under H0
+- `C_H1_molecules_avg`: average communication load under H1
+- `R_H1_molecules_per_s`: average communication rate until detection under H1
+- `D_avg_after_onset`: average detection delay after onset
 
 ### `trial_results.csv`
-Detaillierte Trial-Tabelle mit einer Zeile pro Simulationsdurchlauf und Strategie.
+A detailed trial table with one row per simulation run and strategy.
 
-Wichtige Spalten:
+Important columns:
 
-- `strategy`: `RR`, `TR` oder `EIR`
-- `state_h1`: `0` für H0, `1` für H1
-- `detected`: ob unter H1 eine Detektion erfolgte
-- `pre_onset_alarm`: ob schon vor `anomaly_start` ein Alarm auftrat
-- `detection_time`: Zeitpunkt der Detektion
-- `first_alarm_time`: Zeitpunkt des ersten Gateway-Alarms
-- `transmissions`: Anzahl lokaler Sendungen
-- `max_gateway_evidence`: maximale am Gateway akkumulierte Evidenz
+- `strategy`: `RR`, `TR`, or `EIR`
+- `state_h1`: `0` for H0, `1` for H1
+- `detected`: whether a detection occurred under H1
+- `pre_onset_alarm`: whether an alarm occurred before `anomaly_start`
+- `detection_time`: time of detection
+- `first_alarm_time`: time of the first gateway alarm
+- `transmissions`: number of local transmissions
+- `max_gateway_evidence`: maximum evidence accumulated at the gateway
 
-## 6.2 Sweep-Dateien
+## 6.2 Sweep Files
 
 ### `sweep_anomaly.csv`
-Ergebnisse eines Sweeps über die Anomalie-Stärke `a1`.
+Results of a sweep over anomaly strength `a1`.
 
-Zusätzliche Spalte:
+Additional column:
 
-- `a1`: jeweils getesteter Wert
+- `a1`: tested value
 
 ### `sweep_noise.csv`
-Ergebnisse eines Sweeps über das Rauschen des ersten Markers.
+Results of a sweep over the noise of the first marker.
 
-Zusätzliche Spalte:
+Additional column:
 
-- `sigma1`: jeweils getesteter Wert
+- `sigma1`: tested value
 
 ### `sweep_nodes.csv`
-Ergebnisse eines Sweeps über die Zahl der Knoten.
+Results of a sweep over the number of nodes.
 
-Zusätzliche Spalte:
+Additional column:
 
-- `num_nodes`: jeweils getesteter Wert
+- `num_nodes`: tested value
 
 ### `sweep_inference_delay.csv`
-Ergebnisse eines Sweeps über die lokale Inferenzverzögerung.
+Results of a sweep over the local inference delay.
 
-Zusätzliche Spalte:
+Additional column:
 
-- `inference_delay`: jeweils getesteter Wert
+- `inference_delay`: tested value
 
-Alle Sweep-Dateien enthalten neben dem Sweep-Parameter dieselben aggregierten Metriken wie `summary.csv`.
+All sweep files contain the same aggregated metrics as `summary.csv`, in addition to the sweep parameter.
 
-## 6.3 Plot-Dateien im Demo-Modus
+## 6.3 Plot Files in Demo Mode
 
 ### `plot_detection_vs_anomaly.png`
-Detektionswahrscheinlichkeit `P_D` als Funktion der Anomalie-Stärke `a1`.
+Detection probability `P_D` as a function of anomaly strength `a1`.
 
 ### `plot_false_alarm_vs_noise.png`
-Falschalarmwahrscheinlichkeit `P_FA` als Funktion des Markerrauschens `sigma1`.
+False alarm probability `P_FA` as a function of marker noise `sigma1`.
 
 ### `plot_comm_load_h0_vs_nodes.png`
-Kommunikationslast unter H0 in Abhängigkeit von der Knotenzahl.
+Communication load under H0 as a function of the number of nodes.
 
 ### `plot_comm_load_h1_vs_nodes.png`
-Kommunikationslast unter H1 in Abhängigkeit von der Knotenzahl.
+Communication load under H1 as a function of the number of nodes.
 
 ### `plot_delay_vs_inference_delay.png`
-Detektionsverzögerung in Abhängigkeit von der lokalen Inferenzverzögerung.
+Detection delay as a function of the local inference delay.
 
 ### `plot_pareto.png`
-Pareto-artige Darstellung von Kommunikationslast unter H1 versus Detektionswahrscheinlichkeit `P_D`.
+Pareto-style visualization of communication load under H1 versus detection probability `P_D`.
 
-## 6.4 Diagnostik-Dateien in `diagnostics/`
+## 6.4 Diagnostics Files in `diagnostics/`
 
 ### `calibration_preview.json`
-Vorschau der Konfiguration und der lokal kalibrierten Schwellenwerte im Diagnostiklauf.
+Preview of the configuration and the locally calibrated thresholds in the diagnostics run.
 
-Hinweis: In diesem Diagnostiklauf werden die Gateway-Schwellenwerte nicht vollständig kalibriert; deshalb stehen sie hier als `NaN`.
+Note: in this diagnostics run, the gateway thresholds are not fully calibrated; therefore they appear as `NaN` here.
 
-### `local_samples_H0.csv` und `local_samples_H1.csv`
-Rohdaten lokaler Stichproben unter H0 bzw. H1.
+### `local_samples_H0.csv` and `local_samples_H1.csv`
+Raw local sample data under H0 and H1, respectively.
 
-Spalten:
+Columns:
 
-- `state_h1`: Kennzeichnung des Zustands
-- `x`: Position des Knotens
-- `dist_to_anomaly`: Abstand zur Anomaliequelle
-- `x1`, `x2`: gezogene Markerwerte
-- `z_eir`: EIR-Score relativ zur Entscheidungsgrenze
-- `send_rr`, `send_tr`, `send_eir`: lokale Sendeentscheidung je Strategie
+- `state_h1`: state indicator
+- `x`: node position
+- `dist_to_anomaly`: distance to the anomaly source
+- `x1`, `x2`: sampled marker values
+- `z_eir`: EIR score relative to the decision boundary
+- `send_rr`, `send_tr`, `send_eir`: local send decision for each strategy
 
-Diese Dateien eignen sich besonders für eigene Nachanalysen der lokalen Entscheidungsräume.
+These files are particularly useful for custom post-analysis of the local decision spaces.
 
 ### `local_diagnostics_summary.csv`
-Verdichtete Übersicht der lokalen Stichproben unter H0 und H1.
+Compressed overview of the local samples under H0 and H1.
 
-Spalten u. a.:
+Columns include:
 
-- Mittelwerte von `x1` und `x2`
-- mittlere lokale Sendewahrscheinlichkeiten je Strategie
-- mittlerer EIR-Score
+- means of `x1` and `x2`
+- average local send probabilities per strategy
+- average EIR score
 
 ### `state_dynamics_trials.csv`
-Detaillierte Ergebnisse der zeitlichen Zustandsdynamik über viele Trials.
+Detailed results of the temporal state dynamics across many trials.
 
-Wichtige Spalten:
+Important columns:
 
 - `strategy`
 - `state_h1`
 - `trial`
-- `mean_on_fraction`: Anteil aktiver Zeit
-- `mean_rising_edges_per_node`: mittlere Zahl von Aktivierungsflanken pro Knoten
-- `total_rising_edges`: gesamte Zahl von Aktivierungsflanken
-- `mean_on_duration_s`: mittlere Dauer aktiver Phasen
+- `mean_on_fraction`: fraction of active time
+- `mean_rising_edges_per_node`: average number of activation edges per node
+- `total_rising_edges`: total number of activation edges
+- `mean_on_duration_s`: average duration of active phases
 
 ### `state_dynamics_summary.csv`
-Gemittelte Zustandsdynamik pro Strategie und Zustand (`H0`/`H1`).
+Averaged state dynamics per strategy and state (`H0`/`H1`).
 
 ### `local_marker_histograms.png`
-Histogramme der Markerverteilungen `x1` und `x2` unter H0 und H1.
+Histograms of the marker distributions `x1` and `x2` under H0 and H1.
 
 ### `local_marker_scatter.png`
-Streudiagramm von `x1` gegen `x2` mit eingezeichneter EIR-Entscheidungsgrenze sowie optionalem `x2`-Gate.
+Scatter plot of `x1` versus `x2` including the EIR decision boundary and, where applicable, the `x2` gate.
 
 ### `local_distance_send_profiles.png`
-Darstellung der lokalen Sendewahrscheinlichkeit unter H1 in Abhängigkeit vom Abstand zur Anomaliequelle.
+Visualization of the local send probability under H1 as a function of distance to the anomaly source.
 
-## 7. Typische Arbeitsabfolge
+## 7. Typical Workflow
 
-Für einen sauberen Reproduktionslauf bietet sich diese Reihenfolge an:
+A sensible workflow for a reproducible run is:
 
-1. virtuelle Umgebung anlegen,
-2. Abhängigkeiten installieren,
-3. Diagnostiklauf starten,
-4. Demo-Lauf starten,
-5. `summary.csv`, Sweep-Dateien und Plots auswerten,
-6. bei Bedarf `calibration.json` zur Dokumentation der exakten Konfiguration archivieren.
+1. create the virtual environment,
+2. install the dependencies,
+3. run diagnostics mode,
+4. run demo mode,
+5. inspect `summary.csv`, the sweep files, and the plots,
+6. archive `calibration.json` if the exact configuration should be preserved.
 
-## 8. Beispielkommandos auf einen Blick
+## 8. Example Commands at a Glance
 
-### Diagnostik
+### Diagnostics
 
 ```bash
 python dna-nn-simulator.py --diagnostics --output-dir results
@@ -358,9 +356,8 @@ python dna-nn-simulator.py --diagnostics --output-dir results
 python dna-nn-simulator.py --demo --output-dir results
 ```
 
-### Beides zusammen
+### Both Together
 
 ```bash
 python dna-nn-simulator.py --diagnostics --demo --output-dir results
 ```
-
