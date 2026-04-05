@@ -1,0 +1,147 @@
+# DNA NN Simulator v2.0 configuration file
+# Format: TOML (read via Python's tomllib / tomli)
+#
+# Usage:
+#   python dna-nn-simulator-v2.0.py
+#   python dna-nn-simulator-v2.0.py --config .config_sim
+#
+# Notes:
+# - This is the default configuration file expected by the simulator.
+# - All relevant simulator parameters for baseline runs, diagnostics,
+#   demo sweeps, and EIR grid-search are defined here.
+# - At startup, the simulator writes the fully resolved configuration to
+#   <output_dir>/effective_config.json.
+# - The values below reflect the currently recommended default working point
+#   from the completed 4D EIR grid-search: strict EIR gate, slightly reduced
+#   EIR hysteresis, small gate hysteresis, increased weight for marker 2,
+#   diffusive 1D channel, and leaky gateway evidence integration.
+
+[simulation]
+# Spatial / temporal setup
+L = 1000.0                    # vessel/domain length in um
+gateway_x = 0.0               # gateway position in um
+anomaly_x = 750.0             # anomaly source position in um
+dt = 1.0                      # simulator time step in s
+t_max = 300.0                 # total simulated time in s
+anomaly_start = 30.0          # event onset time in s
+num_nodes = 50                # number of nanonodes
+
+# Marker background model under H0
+mu1_h0 = 0.20                 # mean of marker 1 under H0
+mu2_h0 = 0.10                 # mean of marker 2 under H0
+sigma1 = 0.16                 # std. dev. of marker 1 noise
+sigma2 = 0.05                 # std. dev. of marker 2 noise
+
+# Default anomaly strengths under H1 (used for baseline runs)
+a1 = 0.30                     # anomaly amplitude of marker 1
+a2 = 0.12                     # anomaly amplitude of marker 2
+lambda1 = 250.0               # spatial decay length of marker 1 in um
+lambda2 = 200.0               # spatial decay length of marker 2 in um
+
+# Local inference model
+w1 = 1.0                      # weight of marker 1 in EIR score
+w2 = 0.90                     # recommended default from 4D grid-search
+inference_delay = 20.0        # local EIR processing delay in s
+
+# EIR gate / hysteresis
+use_eir_gate = true
+eir_gate_quantile = 0.85      # recommended default from 4D grid-search
+eir_gate_manual = 0.0         # set > 0 to force a manual gate threshold
+# If you want a manual EIR gate threshold instead of quantile calibration,
+# set eir_gate_manual to the desired positive value and keep use_eir_gate = true.
+# Values <= 0 are interpreted as "no manual override".
+
+use_hysteresis = true
+hysteresis_margin_rr = 0.0
+hysteresis_margin_tr = 0.005
+hysteresis_margin_eir = 0.03  # recommended default from 4D grid-search
+gate_hysteresis_margin = 0.01 # recommended default from 4D grid-search
+
+# Legacy channel parameters (kept for comparison experiments)
+tau0 = 5.0
+kappa_delay = 0.05
+lambda_c = 400.0
+channel_spread_steps = 3
+
+# Preferred v2.0 channel model
+channel_model = "diffusive_1d"   # "diffusive_1d" or "legacy_linear"
+diffusion_coeff = 3000.0          # um^2 / s
+drift_velocity = 0.0              # um / s
+channel_decay_rate = 0.0          # 1 / s
+receiver_radius = 5.0             # um; avoids singularity near gateway
+receiver_gain = 1.0
+
+# Gateway evidence accumulation
+gateway_evidence_mode = "leaky_integrator"  # "leaky_integrator" or "instantaneous"
+gateway_integration_tau = 20.0               # s
+
+# Communication / calibration
+alarm_molecules = 100.0
+local_send_prob_target = 0.02
+gateway_false_alarm_target = 0.05
+
+# Local reporting dynamics
+edge_triggered = true
+refractory_period = 10.0
+allow_refresh_if_still_positive = false
+refresh_period = 60.0
+
+# Temporally correlated markers
+use_temporal_correlation = true
+temporal_alpha = 0.85
+
+# Master seed for deterministic per-trial seeds
+random_seed = 13
+
+[run_modes]
+# Select what the simulator should execute.
+# If all four are false, the simulator falls back to a baseline run.
+output_dir = "run_v20"
+run_baseline = true
+run_diagnostics = true
+run_demo = true
+run_eir_grid_search = false
+
+[baseline]
+# Counts for a plain baseline run.
+num_h0 = 120
+num_h1 = 120
+calib_trials = 150
+
+[diagnostics]
+# Counts for local / state-dynamics diagnostics.
+num_samples = 5000
+num_trials_state = 100
+
+[demo]
+# Counts for the full demo run.
+# Baseline part of the demo:
+baseline_num_h0 = 250
+baseline_num_h1 = 250
+baseline_calib_trials = 250
+# Parameter sweeps inside the demo:
+sweep_num_h0 = 150
+sweep_num_h1 = 150
+sweep_calib_trials = 200
+
+[sweeps]
+# Default sweep values used by demo runs and by EIR grid-search aggregation.
+# a2 values in the anomaly sweep are generated as a2 = anomaly_a2_ratio * a1.
+anomaly_a1_values = [0.03, 0.06, 0.10, 0.15, 0.20]
+anomaly_a2_ratio = 0.4
+noise_values = [0.08, 0.12, 0.16, 0.20]
+nodes_values = [20, 40, 60, 100]
+delay_values = [0.0, 10.0, 30.0, 60.0, 120.0]
+
+[eir_grid]
+# Compact 4D EIR grid-search around the currently best region.
+# This is optional and can take a while.
+gate_values = [0.84, 0.85, 0.86]
+hysteresis_values = [0.02, 0.03, 0.04]
+gate_hysteresis_values = [0.01, 0.02, 0.03]
+w2_values = [0.75, 0.90]
+focus_max_a1 = 0.10
+target_pfa = 0.05
+num_h0 = 150
+num_h1 = 150
+calib_trials = 200
