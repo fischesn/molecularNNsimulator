@@ -1,151 +1,263 @@
-# DNA-NN Simulator v2.0
+# DNA NN Simulator
 
-This release introduces a major revision of the DNA-NN simulator for distributed anomaly detection in molecular nanonetwork scenarios.
+A Python simulator for studying distributed anomaly detection and communication-efficiency trade-offs in DNA-inspired / molecular nanonetworks.
 
-Version **2.0** is not just a convenience update. It changes both the **user workflow** and the **recommended simulator model** in substantial ways.
+The simulator compares three local decision strategies:
 
----
+- **RR** — raw reporting based on two local marker thresholds
+- **TR** — single-marker threshold reporting
+- **EIR** — embedded inference reporting based on weighted multi-marker evidence, optional gating, and hysteresis
 
-## Highlights
-
-### New configuration-driven workflow
-
-The simulator is now driven by a TOML configuration file:
-
-- default config file: **`.config_sim`**
-- optional override via `--config <path>`
-- full resolved configuration exported automatically as `effective_config.json`
-
-This makes experiments easier to reproduce, modify, and document than in the original single-script workflow.
-
-### Strongly improved simulator model
-
-Version 2.0 replaces the earlier recommended default model by a more robust and physically plausible setup:
-
-- **diffusive 1D channel model** as the default recommendation
-- **leaky gateway evidence integration** as the default recommendation
-- **variance-preserving temporally correlated marker model**
-- **robust threshold calibration** for clipped-at-zero observations
-- **deterministic per-trial seeding** for reproducible sweeps and parameter searches
-
-The legacy linear-delay channel remains available for comparison, debugging, and backward-style experiments.
-
-### Built-in config-based grid search
-
-Version 2.0 adds a built-in EIR parameter search that can be specified directly in the config file through parameter lists. The simulator automatically evaluates the Cartesian product.
+Version **2.0** introduces a configuration-driven workflow via `.config_sim`, a substantially improved physical and statistical model, deterministic per-trial reproducibility, and a built-in grid-search mechanism configurable directly from the TOML file.
 
 ---
 
-## What changed compared with v1.0
+## 1. Main features
 
-## 1. Usage model
+- Config-driven execution via **`.config_sim`**
+- Baseline, diagnostics, demo, and EIR grid-search run modes
+- Diffusive 1D channel model with optional legacy channel fallback
+- Leaky gateway evidence accumulation with threshold calibration
+- Deterministic per-trial seeding for reproducible sweeps and grid searches
+- Temporally correlated marker processes with variance-preserving AR(1)-style dynamics
+- Robust threshold calibration for clipped-at-zero marker distributions
+- Automatic CSV / JSON / PNG export for all major experiments
+- Config-based parameter sweeps and config-based Cartesian-product grid search
 
-### v1.0
+---
 
-The original release centered on a single Python entry point with command-line flags for diagnostics and demo mode.
+## 2. Repository structure
 
-### v2.0
+A typical repository layout for v2.0 is:
 
-The new release keeps a simple command-line interface, but the primary workflow is now:
+```text
+.
+├── dna-nn-simulator-v2.0.py
+├── .config_sim
+├── requirements.txt
+└── results/
+```
+
+The simulator writes outputs to the directory configured in `[run_modes].output_dir`.
+
+---
+
+## 3. Requirements
+
+Recommended:
+
+- Python **3.11+**
+- `pip`
+
+Required Python packages:
+
+- `numpy`
+- `pandas`
+- `matplotlib`
+
+If you use Python < 3.11, install `tomli` as well because the simulator uses TOML-based configuration files.
+
+---
+
+## 4. Installation
+
+### Windows PowerShell
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+If PowerShell blocks script execution, temporarily run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+### Linux / macOS / Git Bash
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+---
+
+## 5. Configuration file
+
+Version 2.0 uses **`.config_sim`** as the default simulator configuration file.
+
+### Default start
 
 ```bash
 python dna-nn-simulator-v2.0.py
 ```
 
-with all experiment settings loaded from `.config_sim`.
-
-You can still select another config explicitly:
+### Explicit config path
 
 ```bash
 python dna-nn-simulator-v2.0.py --config my_experiment.toml
 ```
 
-This is the largest usability change in the release.
+### Optional output override
+
+```bash
+python dna-nn-simulator-v2.0.py --output-dir my_results
+```
+
+### Print the resolved configuration
+
+```bash
+python dna-nn-simulator-v2.0.py --print-effective-config
+```
+
+At startup, the simulator writes the fully resolved configuration to:
+
+```text
+effective_config.json
+```
+
+inside the selected output directory.
 
 ---
 
-## 2. Model changes
+## 6. Configuration structure
 
-### 2.1 Channel model
+The TOML file is organized into the following sections:
 
-### v1.0
+- `[simulation]` — physical model, local decision model, channel model, gateway model, seeds
+- `[run_modes]` — which run modes should execute and where outputs go
+- `[baseline]` — trial counts for the default baseline run
+- `[diagnostics]` — local sample export and state-dynamics diagnostics
+- `[demo]` — baseline + sweep settings for the full demo mode
+- `[sweeps]` — values for anomaly, noise, node-count, and inference-delay sweeps
+- `[eir_grid]` — controls for EIR parameter search
+- `[eir_grid.parameter_values]` — lists of parameter values interpreted as a Cartesian-product grid
 
-The earlier simulator used a simple distance-dependent communication approximation with linear delay and fixed spreading.
+### Example
 
-### v2.0
+```toml
+[run_modes]
+output_dir = "run_v20"
+run_baseline = true
+run_diagnostics = false
+run_demo = false
+run_eir_grid_search = false
 
-The recommended default is now a **diffusive 1D response model** with optional drift and decay:
-
-- `channel_model = "diffusive_1d"`
-- legacy fallback retained as `legacy_linear`
-
-This gives a more meaningful distance/time coupling than the earlier linear-delay approximation.
-
-### 2.2 Gateway aggregation
-
-### v1.0
-
-Gateway evidence was accumulated in a simpler way around raw arrival evidence and thresholding.
-
-### v2.0
-
-The preferred default is now a **leaky evidence integrator**:
-
-- `gateway_evidence_mode = "leaky_integrator"`
-
-This stabilizes gateway-side decision dynamics and avoids a purely instantaneous view of received alarm evidence.
-
-### 2.3 Temporal marker dynamics
-
-### v1.0
-
-Temporal correlation was modeled in a simpler form that could distort the effective stationary variance.
-
-### v2.0
-
-Marker dynamics now use a **variance-preserving temporally correlated latent process**, so temporal persistence no longer unintentionally suppresses fluctuation strength in the same way.
-
-### 2.4 Threshold calibration
-
-### v1.0
-
-Threshold calibration relied more directly on quantile-style logic, which can become brittle for clipped-at-zero marginals.
-
-### v2.0
-
-Calibration uses more robust search procedures designed for the actual clipped-at-zero observation model.
-
-### 2.5 Reproducibility
-
-### v1.0
-
-Large sweeps could be affected by shared random-number-stream coupling across trials.
-
-### v2.0
-
-The simulator now derives **deterministic per-trial seeds** from phase, strategy, state, trial index, and experiment namespace. This makes sweeps and searches reproducible and avoids artifacts caused by different random-number consumption paths.
+[simulation]
+channel_model = "diffusive_1d"
+gateway_evidence_mode = "leaky_integrator"
+eir_gate_quantile = 0.85
+hysteresis_margin_eir = 0.02
+w2 = 0.75
+```
 
 ---
 
-## 3. New functionality
+## 7. Run modes
 
-### Diagnostics, demo, and baseline remain available
+### 7.1 Baseline run
 
-The familiar simulator outputs remain conceptually intact:
+If `run_baseline = true`, the simulator executes one baseline experiment and writes:
 
-- baseline run
-- diagnostics mode
-- demo mode with parameter sweeps
+- `summary.csv`
+- `calibration.json`
+- `effective_config.json`
 
-### New: config-based EIR grid search
+Minimal command:
 
-The new config section
+```bash
+python dna-nn-simulator-v2.0.py
+```
+
+### 7.2 Diagnostics mode
+
+Enable in `.config_sim`:
+
+```toml
+[run_modes]
+run_diagnostics = true
+```
+
+This creates a `diagnostics/` subdirectory with local marker and state-dynamics diagnostics.
+
+Typical outputs:
+
+- `local_diagnostics_summary.csv`
+- `local_samples_H0.csv`
+- `local_samples_H1.csv`
+- `state_dynamics_summary.csv`
+- `state_dynamics_trials.csv`
+- `local_marker_histograms.png`
+- `local_marker_scatter.png`
+- `local_distance_send_profiles.png`
+
+### 7.3 Demo mode
+
+Enable:
+
+```toml
+[run_modes]
+run_demo = true
+```
+
+Demo mode performs:
+
+- one baseline run
+- parameter sweeps over anomaly strength, noise, node count, and inference delay
+- export of trial-level and summary data
+- generation of result plots
+
+Typical outputs:
+
+- `trial_results.csv`
+- `summary.csv`
+- `sweep_anomaly.csv`
+- `sweep_noise.csv`
+- `sweep_nodes.csv`
+- `sweep_inference_delay.csv`
+- `plot_detection_vs_anomaly.png`
+- `plot_false_alarm_vs_noise.png`
+- `plot_comm_load_h0_vs_nodes.png`
+- `plot_comm_load_h1_vs_nodes.png`
+- `plot_delay_vs_inference_delay.png`
+- `plot_pareto.png`
+
+### 7.4 EIR grid search
+
+Enable:
+
+```toml
+[run_modes]
+run_eir_grid_search = true
+```
+
+The grid search evaluates the parameter combinations defined in `[eir_grid.parameter_values]`.
+
+Outputs include:
+
+- `eir_grid_anomaly.csv`
+- `eir_grid_summary.csv`
+- `eir_grid_best.json`
+- heatmaps for detection, communication-cost difference, delay difference, and PFA deviation
+
+---
+
+## 8. How the grid search works
+
+The table
 
 ```toml
 [eir_grid.parameter_values]
 ```
 
-lets you define search dimensions directly in the config file, for example:
+contains lists of values. Each list defines one search dimension. The simulator automatically evaluates the full Cartesian product.
+
+### Example
 
 ```toml
 [eir_grid.parameter_values]
@@ -155,44 +267,195 @@ gate_hysteresis_margin = [0.01, 0.02, 0.03]
 w2 = [0.75, 0.90]
 ```
 
-The simulator then evaluates the full Cartesian product automatically.
+This produces a 3 × 3 × 3 × 2 = **54-combination** grid search.
 
-This is a major practical improvement over manually editing one parameter set after another.
-
----
-
-## 4. Output changes
-
-Version 2.0 still produces CSV, JSON, and PNG outputs, but now also writes:
-
-- **`effective_config.json`** — the exact resolved configuration used for the run
-
-For EIR parameter search, v2.0 additionally produces:
-
-- `eir_grid_anomaly.csv`
-- `eir_grid_summary.csv`
-- `eir_grid_best.json`
-- heatmaps for parameter-search interpretation
+You may also grid-search other keys from `[simulation]` if they are valid simulator parameters, for example `inference_delay`, `w1`, `temporal_alpha`, or `receiver_gain`.
 
 ---
 
-## 5. Recommended v2.0 default model
+## 9. Simulation model
 
-The intended default setup of v2.0 is:
+### 9.1 Scenario
 
-- TOML config-driven execution via `.config_sim`
-- `channel_model = "diffusive_1d"`
-- `gateway_evidence_mode = "leaky_integrator"`
-- deterministic per-trial seeding
-- config-based sweeps and grid search
+The simulator models a distributed in-body nanonetwork in a one-dimensional domain. Nanonodes observe two biochemical markers and may emit alarm molecules toward a gateway. The simulator compares different local reporting strategies and studies the trade-offs between:
 
-This should be regarded as the recommended public reference model for the release.
+- detection probability
+- false alarms
+- event-driven communication cost
+- nuisance communication under H0
+- end-to-end delay
+
+### 9.2 Local strategies
+
+- **RR**: positive if either marker crosses its local threshold
+- **TR**: positive if marker 1 crosses its threshold
+- **EIR**: positive if a weighted evidence score exceeds threshold, optionally with an additional gate on marker 2
+
+The EIR score is of the form:
+
+```text
+z = w1 * x1 + w2 * x2
+```
+
+with a calibrated threshold and optional gate/hysteresis logic.
+
+### 9.3 Marker process
+
+Under H0, both markers fluctuate around background means.
+Under H1, spatially decaying anomaly amplitudes are added to the local means.
+
+Version 2.0 uses a **variance-preserving temporally correlated latent process** rather than the older non-stationary smoothing approximation. This keeps the requested stationary variance of the unclipped observation model while preserving temporal persistence.
+
+### 9.4 Local decision dynamics
+
+The simulator supports:
+
+- hysteresis for RR, TR, and EIR
+- an additional hysteresis margin for the EIR gate
+- edge-triggered alarm emission
+- refractory suppression of repeated transmissions
+- optional refresh transmissions for sustained positive states
+
+### 9.5 Channel model
+
+Version 2.0 supports two channel models:
+
+- **`diffusive_1d`** — the preferred model in v2.0
+- **`legacy_linear`** — retained for comparison and backward-style experiments
+
+The preferred model uses a discretized diffusive first-passage style response with optional drift and decay. This replaces the earlier purely linear delay plus fixed Gaussian spread approximation as the recommended default.
+
+### 9.6 Gateway model
+
+Version 2.0 supports:
+
+- **`instantaneous`** gateway evidence
+- **`leaky_integrator`** gateway evidence (recommended default)
+
+The leaky integrator provides a more stable and physically plausible aggregation of arriving alarm evidence over time.
+
+### 9.7 Calibration
+
+The simulator calibrates:
+
+- local thresholds to a target local positive-state probability under H0
+- gateway thresholds to a target false-alarm level under H0
+
+Version 2.0 uses more robust threshold-search logic for clipped-at-zero marker distributions.
 
 ---
 
-## 6. Backward-style experiments
+## 10. Reproducibility
 
-If you want behavior closer to the older simulator lineage, v2.0 still supports a legacy-style configuration, for example:
+A major v2.0 change is deterministic per-trial seeding.
+
+Instead of consuming one shared RNG stream across entire sweeps, the simulator derives deterministic seeds from:
+
+- the master seed
+- phase
+- strategy
+- H0 / H1 state
+- trial index
+- sweep / namespace context
+
+This makes sweeps and grid searches reproducible and avoids artifacts caused by variable random-number consumption across early-stopping trials.
+
+---
+
+## 11. Output files
+
+### Core files
+
+- **`effective_config.json`** — fully resolved configuration actually used
+- **`calibration.json`** — calibrated thresholds and key simulation settings
+- **`summary.csv`** — one summary row per strategy
+- **`trial_results.csv`** — trial-level outcomes
+
+### Sweep files
+
+- **`sweep_anomaly.csv`**
+- **`sweep_noise.csv`**
+- **`sweep_nodes.csv`**
+- **`sweep_inference_delay.csv`**
+
+### Grid-search files
+
+- **`eir_grid_anomaly.csv`**
+- **`eir_grid_summary.csv`**
+- **`eir_grid_best.json`**
+- **`plot_eir_grid_mean_pd.png`**
+- **`plot_eir_grid_delta_ch1_vs_tr.png`**
+- **`plot_eir_grid_delta_delay_vs_tr.png`**
+- **`plot_eir_grid_pfa_deviation.png`**
+
+---
+
+## 12. Recommended workflows
+
+### Quick baseline
+
+```bash
+python dna-nn-simulator-v2.0.py
+```
+
+### Full demo
+
+Set in `.config_sim`:
+
+```toml
+[run_modes]
+run_demo = true
+```
+
+then run:
+
+```bash
+python dna-nn-simulator-v2.0.py
+```
+
+### Grid search only
+
+Set:
+
+```toml
+[run_modes]
+run_eir_grid_search = true
+run_demo = false
+run_diagnostics = false
+run_baseline = false
+```
+
+then run:
+
+```bash
+python dna-nn-simulator-v2.0.py
+```
+
+### Separate experiment configs
+
+Keep one default `.config_sim` for standard runs and copy it for variants, e.g.:
+
+```bash
+cp .config_sim experiment_low_noise.toml
+python dna-nn-simulator-v2.0.py --config experiment_low_noise.toml
+```
+
+---
+
+## 13. Migration notes from v1.0
+
+Compared with the original release:
+
+- configuration is no longer hard-coded as the primary workflow
+- `.config_sim` is now the default experiment definition
+- the recommended channel model is now diffusive rather than linear-delay-based
+- the recommended gateway model is now a leaky evidence integrator
+- the temporal marker model is variance-preserving
+- calibration is more robust for clipped-at-zero observations
+- sweeps are reproducible via deterministic per-trial seeds
+- EIR parameter search can be configured directly from the TOML file
+
+If you want to approximate older behavior, set:
 
 ```toml
 [simulation]
@@ -200,409 +463,8 @@ channel_model = "legacy_linear"
 gateway_evidence_mode = "instantaneous"
 ```
 
-This is useful for method comparison and migration studies.
-
 ---
 
-## 7. Typical usage
+## 14. License
 
-### Standard run
-
-```bash
-python dna-nn-simulator-v2.0.py
-```
-
-### Alternative config file
-
-```bash
-python dna-nn-simulator-v2.0.py --config experiment.toml
-```
-
-### Override output directory
-
-```bash
-python dna-nn-simulator-v2.0.py --output-dir results_v20
-```
-
----
-
-## 8. Release summary
-
-Version 2.0 is the first release that turns the simulator into a more systematic experimental framework rather than only a fixed-script implementation.
-
-The central differences to v1.0 are therefore:
-
-- **better usability** through externalized configuration
-- **better reproducibility** through deterministic seeding and saved effective configs
-- **better model quality** through improved channel, gateway, temporal, and calibration models
-- **better extensibility** through config-defined sweeps and grid search
-
-
----
-## README v1.0
-
-# DNA NN Simulator
-
-This repository contains a Python simulator for a distributed DNA/molecular network scenario with three local decision strategies (`RR`, `TR`, `EIR`), gateway aggregation, threshold calibration, and export of CSV files and plots.
-
-The main file is:
-
-- `dna-nn-simulator.py`
-
-In addition, the repository contains an example folder `results/` with precomputed output files.
-
-## 1. Requirements
-
-A recent Python installation is required.
-
-Recommended:
-
-- Python 3.10 or newer
-- `pip` available
-
-The simulator uses exactly these external libraries:
-
-- `numpy`
-- `pandas`
-- `matplotlib`
-
-## 2. Create a Virtual Environment and Install the Libraries
-
-### Windows PowerShell
-
-In the repository directory:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-If PowerShell blocks script execution, you may need to temporarily run:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-```
-
-### Linux / macOS / Git Bash
-
-In the repository directory:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-## 3. Repository Structure
-
-In its current form, the ZIP file essentially contains:
-
-```text
-.
-├── dna-nn-simulator.py
-└── results/
-    ├── calibration.json
-    ├── summary.csv
-    ├── trial_results.csv
-    ├── sweep_anomaly.csv
-    ├── sweep_noise.csv
-    ├── sweep_nodes.csv
-    ├── sweep_inference_delay.csv
-    ├── plot_detection_vs_anomaly.png
-    ├── plot_false_alarm_vs_noise.png
-    ├── plot_comm_load_h0_vs_nodes.png
-    ├── plot_comm_load_h1_vs_nodes.png
-    ├── plot_delay_vs_inference_delay.png
-    ├── plot_pareto.png
-    └── diagnostics/
-        ├── calibration_preview.json
-        ├── local_diagnostics_summary.csv
-        ├── local_samples_H0.csv
-        ├── local_samples_H1.csv
-        ├── state_dynamics_summary.csv
-        ├── state_dynamics_trials.csv
-        ├── local_marker_histograms.png
-        ├── local_marker_scatter.png
-        └── local_distance_send_profiles.png
-```
-
-## 4. Running the Simulator
-
-The simulator is started directly via the Python script:
-
-```bash
-python dna-nn-simulator.py [OPTIONS]
-```
-
-Relevant available options:
-
-- `--diagnostics`  
-  Runs local diagnostics and state-dynamics diagnostics.
-- `--demo`  
-  Runs the full parameter sweeps and generates the demo plots.
-- `--output-dir <PATH>`  
-  Target directory for the outputs. Default is `sim_output`.
-- `--num-samples <N>`  
-  Number of local samples per state for diagnostics. Default: `5000`.
-- `--num-trials-state <N>`  
-  Number of state-dynamics trials in diagnostics. Default: `100`.
-
-### 4.1 Diagnostics Mode
-
-Example:
-
-```bash
-python dna-nn-simulator.py --diagnostics --output-dir results
-```
-
-This creates diagnostic files in the subdirectory:
-
-```text
-results/diagnostics/
-```
-
-Optionally, the sample size and the number of state trials can be adjusted:
-
-```bash
-python dna-nn-simulator.py --diagnostics --output-dir results --num-samples 5000 --num-trials-state 100
-```
-
-### 4.2 Demo Mode
-
-Example:
-
-```bash
-python dna-nn-simulator.py --demo --output-dir results
-```
-
-This writes the main outputs directly to:
-
-```text
-results/
-```
-
-The demo mode includes:
-
-- a baseline simulation,
-- calibration of local and gateway thresholds,
-- trial export,
-- a summary file,
-- multiple parameter sweeps,
-- plot generation.
-
-### 4.3 Combination of Both Modes
-
-Both flags can also be used together:
-
-```bash
-python dna-nn-simulator.py --diagnostics --demo --output-dir results
-```
-
-This produces:
-
-- demo results in `results/`
-- diagnostics results in `results/diagnostics/`
-
-### 4.4 Default Run Without Flags
-
-Without `--diagnostics` and without `--demo`, the script performs a smaller default run:
-
-```bash
-python dna-nn-simulator.py --output-dir sim_output
-```
-
-This primarily writes `summary.csv` and `calibration.json`.
-
-## 5. What the Simulator Does
-
-The simulator compares three local decision strategies:
-
-- **RR**: alarm if at least one of the two markers exceeds its threshold.
-- **TR**: alarm based on the first marker (`x1`) and a single threshold.
-- **EIR**: alarm based on a weighted linear combination of the markers (`w1*x1 + w2*x2`) with an optional gate on `x2`.
-
-At the local level, marker values are generated, local decisions are derived, and potential alarm emissions are transmitted to a gateway. At the gateway level, the simulator then decides whether a global detection is present.
-
-## 6. Explanation of the Output Files
-
-## 6.1 Main Outputs in Demo/Default Mode
-
-### `calibration.json`
-A JSON file containing:
-
-- the full simulation configuration used,
-- the calibrated local thresholds,
-- the calibrated gateway thresholds.
-
-This is the most important reference file for reproducing a simulation later.
-
-### `summary.csv`
-An aggregated result overview with exactly one row per strategy (`RR`, `TR`, `EIR`).
-
-Important columns:
-
-- `P_D`: detection probability under H1
-- `P_pre_onset_alarm`: probability of an alarm before the actual onset under H1
-- `P_FA`: false alarm probability under H0
-- `C_total_molecules_avg`: average total communication load
-- `C_H0_molecules_avg`: average communication load under H0
-- `C_H1_molecules_avg`: average communication load under H1
-- `R_H1_molecules_per_s`: average communication rate until detection under H1
-- `D_avg_after_onset`: average detection delay after onset
-
-### `trial_results.csv`
-A detailed trial table with one row per simulation run and strategy.
-
-Important columns:
-
-- `strategy`: `RR`, `TR`, or `EIR`
-- `state_h1`: `0` for H0, `1` for H1
-- `detected`: whether a detection occurred under H1
-- `pre_onset_alarm`: whether an alarm occurred before `anomaly_start`
-- `detection_time`: time of detection
-- `first_alarm_time`: time of the first gateway alarm
-- `transmissions`: number of local transmissions
-- `max_gateway_evidence`: maximum evidence accumulated at the gateway
-
-## 6.2 Sweep Files
-
-### `sweep_anomaly.csv`
-Results of a sweep over anomaly strength `a1`.
-
-Additional column:
-
-- `a1`: tested value
-
-### `sweep_noise.csv`
-Results of a sweep over the noise of the first marker.
-
-Additional column:
-
-- `sigma1`: tested value
-
-### `sweep_nodes.csv`
-Results of a sweep over the number of nodes.
-
-Additional column:
-
-- `num_nodes`: tested value
-
-### `sweep_inference_delay.csv`
-Results of a sweep over the local inference delay.
-
-Additional column:
-
-- `inference_delay`: tested value
-
-All sweep files contain the same aggregated metrics as `summary.csv`, in addition to the sweep parameter.
-
-## 6.3 Plot Files in Demo Mode
-
-### `plot_detection_vs_anomaly.png`
-Detection probability `P_D` as a function of anomaly strength `a1`.
-
-### `plot_false_alarm_vs_noise.png`
-False alarm probability `P_FA` as a function of marker noise `sigma1`.
-
-### `plot_comm_load_h0_vs_nodes.png`
-Communication load under H0 as a function of the number of nodes.
-
-### `plot_comm_load_h1_vs_nodes.png`
-Communication load under H1 as a function of the number of nodes.
-
-### `plot_delay_vs_inference_delay.png`
-Detection delay as a function of the local inference delay.
-
-### `plot_pareto.png`
-Pareto-style visualization of communication load under H1 versus detection probability `P_D`.
-
-## 6.4 Diagnostics Files in `diagnostics/`
-
-### `calibration_preview.json`
-Preview of the configuration and the locally calibrated thresholds in the diagnostics run.
-
-Note: in this diagnostics run, the gateway thresholds are not fully calibrated; therefore they appear as `NaN` here.
-
-### `local_samples_H0.csv` and `local_samples_H1.csv`
-Raw local sample data under H0 and H1, respectively.
-
-Columns:
-
-- `state_h1`: state indicator
-- `x`: node position
-- `dist_to_anomaly`: distance to the anomaly source
-- `x1`, `x2`: sampled marker values
-- `z_eir`: EIR score relative to the decision boundary
-- `send_rr`, `send_tr`, `send_eir`: local send decision for each strategy
-
-These files are particularly useful for custom post-analysis of the local decision spaces.
-
-### `local_diagnostics_summary.csv`
-Compressed overview of the local samples under H0 and H1.
-
-Columns include:
-
-- means of `x1` and `x2`
-- average local send probabilities per strategy
-- average EIR score
-
-### `state_dynamics_trials.csv`
-Detailed results of the temporal state dynamics across many trials.
-
-Important columns:
-
-- `strategy`
-- `state_h1`
-- `trial`
-- `mean_on_fraction`: fraction of active time
-- `mean_rising_edges_per_node`: average number of activation edges per node
-- `total_rising_edges`: total number of activation edges
-- `mean_on_duration_s`: average duration of active phases
-
-### `state_dynamics_summary.csv`
-Averaged state dynamics per strategy and state (`H0`/`H1`).
-
-### `local_marker_histograms.png`
-Histograms of the marker distributions `x1` and `x2` under H0 and H1.
-
-### `local_marker_scatter.png`
-Scatter plot of `x1` versus `x2` including the EIR decision boundary and, where applicable, the `x2` gate.
-
-### `local_distance_send_profiles.png`
-Visualization of the local send probability under H1 as a function of distance to the anomaly source.
-
-## 7. Typical Workflow
-
-A sensible workflow for a reproducible run is:
-
-1. create the virtual environment,
-2. install the dependencies,
-3. run diagnostics mode,
-4. run demo mode,
-5. inspect `summary.csv`, the sweep files, and the plots,
-6. archive `calibration.json` if the exact configuration should be preserved.
-
-## 8. Example Commands at a Glance
-
-### Diagnostics
-
-```bash
-python dna-nn-simulator.py --diagnostics --output-dir results
-```
-
-### Demo
-
-```bash
-python dna-nn-simulator.py --demo --output-dir results
-```
-
-### Both Together
-
-```bash
-python dna-nn-simulator.py --diagnostics --demo --output-dir results
-```
-
-
+This project is released under the repository license.
