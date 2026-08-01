@@ -66,7 +66,7 @@ class SimulationConfig:
     diffusion_coeff: float = 3000.0  # um^2 / s
     drift_velocity: float = 0.0      # um / s
     channel_decay_rate: float = 0.0  # 1 / s
-    receiver_radius: float = 5.0     # um, avoids d=0 singularity
+    receiver_min_distance: float = 5.0  # um, effective near-gateway cutoff
     receiver_gain: float = 1.0
 
     gateway_evidence_mode: str = "leaky_integrator"  # leaky_integrator | instantaneous
@@ -126,17 +126,21 @@ def deterministic_seed(
     cfg: SimulationConfig,
     *,
     phase: str,
-    strategy: str = "",
     state_h1: bool = False,
     trial_index: int = 0,
     namespace: str = "",
 ) -> int:
+    """Derive a scenario seed independent of the reporting strategy.
+
+    RR, TR, and EIR therefore see identical positions and marker-noise paths for
+    a given phase, state, trial index, and namespace. Distinct phase names keep
+    threshold calibration, gateway calibration, and evaluation independent.
+    """
     payload = "|".join(
         [
             "dna-nn-simulator-v2.0",
             str(cfg.random_seed),
             phase,
-            strategy,
             str(int(state_h1)),
             str(trial_index),
             namespace,
@@ -262,23 +266,56 @@ def legacy_channel_response(distance: float, cfg: SimulationConfig, K: int) -> n
     return response
 
 
-def diffusive_channel_response(distance: float, cfg: SimulationConfig, K: int) -> np.ndarray:
-    # First-passage style arrival density in 1D, discretized on the simulator grid.
-    # This is still a model abstraction, but it has the correct diffusive distance/time coupling.
-    D = max(cfg.diffusion_coeff, 1e-12)
+def first_passage_density_1d(
+    times: np.ndarray,
+    distance: float,
+    cfg: SimulationConfig,
+) -> np.ndarray:
+    """Arrival-time density at an absorbing boundary in an effective 1D channel.
+
+    The gateway is located at x=0 and the emitter at positive distance ``d``.
+    Positive drift velocity therefore denotes drift toward the gateway. Molecular
+    decay is represented as independent exponential killing before first arrival.
+    """
+    if cfg.diffusion_coeff <= 0.0:
+        raise ValueError("diffusion_coeff must be positive.")
+    if cfg.channel_decay_rate < 0.0:
+        raise ValueError("channel_decay_rate must be non-negative.")
+    if cfg.receiver_min_distance <= 0.0:
+        raise ValueError("receiver_min_distance must be positive.")
+
+    sample_times = np.asarray(times, dtype=float)
+    if np.any(sample_times <= 0.0):
+        raise ValueError("First-passage density is defined only for positive times.")
+
+    D = cfg.diffusion_coeff
     v = cfg.drift_velocity
-    d = max(abs(distance), cfg.receiver_radius)
-    times = (np.arange(K, dtype=float) + 0.5) * cfg.dt
+    d_eff = max(abs(float(distance)), cfg.receiver_min_distance)
 
     with np.errstate(over="ignore", under="ignore", divide="ignore", invalid="ignore"):
-        denom = np.sqrt(4.0 * np.pi * D * times ** 3)
-        exponent = -((d - v * times) ** 2) / (4.0 * D * times) - cfg.channel_decay_rate * times
-        density = (d / denom) * np.exp(exponent)
-        response = cfg.alarm_molecules * cfg.receiver_gain * density * cfg.dt
+        denominator = np.sqrt(4.0 * np.pi * D * sample_times ** 3)
+        exponent = -((d_eff - v * sample_times) ** 2) / (4.0 * D * sample_times)
+        exponent -= cfg.channel_decay_rate * sample_times
+        density = (d_eff / denominator) * np.exp(exponent)
 
-    response[~np.isfinite(response)] = 0.0
-    response = np.maximum(response, 0.0)
-    return response
+    density[~np.isfinite(density)] = 0.0
+    return np.maximum(density, 0.0)
+
+
+def diffusive_channel_response(distance: float, cfg: SimulationConfig, K: int) -> np.ndarray:
+    """Midpoint-discretized molecule arrivals caused by one alarm burst."""
+    if cfg.dt <= 0.0:
+        raise ValueError("dt must be positive.")
+    if K <= 0:
+        raise ValueError("K must be positive.")
+    if cfg.alarm_molecules < 0.0:
+        raise ValueError("alarm_molecules must be non-negative.")
+    if cfg.receiver_gain < 0.0:
+        raise ValueError("receiver_gain must be non-negative.")
+
+    times = (np.arange(K, dtype=float) + 0.5) * cfg.dt
+    density = first_passage_density_1d(times, distance, cfg)
+    return cfg.alarm_molecules * cfg.receiver_gain * density * cfg.dt
 
 
 def build_channel_responses(positions: np.ndarray, cfg: SimulationConfig, K: int) -> List[np.ndarray]:
@@ -420,14 +457,16 @@ def _rr_tau_for_target(x1: np.ndarray, x2: np.ndarray, cfg: SimulationConfig) ->
 
 
 def calibrate_local_thresholds(cfg: SimulationConfig, samples: int = 100_000) -> LocalThresholds:
-    rng = np.random.default_rng(cfg.random_seed + 102)
+    rng = np.random.default_rng(
+        deterministic_seed(cfg, phase="local_threshold_calibration")
+    )
     x1 = clipped_normal(np.full(samples, cfg.mu1_h0), cfg.sigma1, rng)
     x2 = clipped_normal(np.full(samples, cfg.mu2_h0), cfg.sigma2, rng)
 
     rr_tau1, rr_tau2 = _rr_tau_for_target(x1, x2, cfg)
     tr_tau = threshold_for_tail_prob(x1, cfg.local_send_prob_target, name="TR marker 1")
 
-    z = cfg.w1 * x1 + cfg.w2 * x2
+    score = eir_score(x1, x2, cfg)
     if cfg.eir_gate_manual is not None:
         eir_gate_tau = float(cfg.eir_gate_manual)
     else:
@@ -436,15 +475,15 @@ def calibrate_local_thresholds(cfg: SimulationConfig, samples: int = 100_000) ->
     if cfg.use_eir_gate:
         gate_mask = x2 > eir_gate_tau
         eir_theta = search_theta_for_target_probability(
-            z,
-            lambda theta: np.mean((z > theta) & gate_mask),
+            score,
+            lambda theta: np.mean((score > theta) & gate_mask),
             cfg.local_send_prob_target,
             name="EIR gated score",
         )
     else:
         eir_theta = search_theta_for_target_probability(
-            z,
-            lambda theta: np.mean(z > theta),
+            score,
+            lambda theta: np.mean(score > theta),
             cfg.local_send_prob_target,
             name="EIR score",
         )
@@ -458,14 +497,42 @@ def calibrate_local_thresholds(cfg: SimulationConfig, samples: int = 100_000) ->
     )
 
 
+def eir_score(x1: np.ndarray, x2: np.ndarray, cfg: SimulationConfig) -> np.ndarray:
+    """Return the unthresholded weighted EIR evidence score."""
+    return cfg.w1 * x1 + cfg.w2 * x2
+
+
+def eir_transition_conditions(
+    x1: np.ndarray,
+    x2: np.ndarray,
+    thresholds: LocalThresholds,
+    cfg: SimulationConfig,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Return the ON and OFF conditions of the gated EIR state machine.
+
+    An inactive node turns ON only when both the weighted score and the
+    specificity gate exceed their upper thresholds. An active node turns OFF
+    when either quantity falls below its respective lower threshold.
+    """
+    score = eir_score(x1, x2, cfg)
+    on = score > thresholds.eir_theta
+    off = score < (thresholds.eir_theta - cfg.hysteresis_margin_eir)
+    if cfg.use_eir_gate:
+        gate_on = x2 > thresholds.eir_gate_tau
+        gate_off = x2 < (thresholds.eir_gate_tau - cfg.gate_hysteresis_margin)
+        on = on & gate_on
+        off = off | gate_off
+    return on, off
+
+
 def raw_positive_state(strategy: str, x1: np.ndarray, x2: np.ndarray, thresholds: LocalThresholds, cfg: SimulationConfig) -> np.ndarray:
     if strategy == "RR":
         return (x1 > thresholds.rr_tau1) | (x2 > thresholds.rr_tau2)
     if strategy == "TR":
         return x1 > thresholds.tr_tau
     if strategy == "EIR":
-        z = cfg.w1 * x1 + cfg.w2 * x2
-        state = z > thresholds.eir_theta
+        score = eir_score(x1, x2, cfg)
+        state = score > thresholds.eir_theta
         if cfg.use_eir_gate:
             state = state & (x2 > thresholds.eir_gate_tau)
         return state
@@ -482,14 +549,7 @@ def hysteretic_positive_state(strategy: str, x1: np.ndarray, x2: np.ndarray, pre
         off = x1 < (thresholds.tr_tau - cfg.hysteresis_margin_tr)
         return (prev_state & (~off)) | ((~prev_state) & on)
     if strategy == "EIR":
-        z = cfg.w1 * x1 + cfg.w2 * x2
-        on = z > thresholds.eir_theta
-        off = z < (thresholds.eir_theta - cfg.hysteresis_margin_eir)
-        if cfg.use_eir_gate:
-            gate_on = x2 > thresholds.eir_gate_tau
-            gate_off = x2 < (thresholds.eir_gate_tau - cfg.gate_hysteresis_margin)
-            on = on & gate_on
-            off = off & gate_off
+        on, off = eir_transition_conditions(x1, x2, thresholds, cfg)
         return (prev_state & (~off)) | ((~prev_state) & on)
     raise ValueError(f"Unknown strategy: {strategy}")
 
@@ -520,7 +580,7 @@ def sample_local_decisions(cfg: SimulationConfig, thresholds: LocalThresholds, s
     rr = evaluate_positive_state("RR", x1, x2, prev, thresholds, cfg)
     tr = evaluate_positive_state("TR", x1, x2, prev, thresholds, cfg)
     eir = evaluate_positive_state("EIR", x1, x2, prev, thresholds, cfg)
-    z = cfg.w1 * x1 + cfg.w2 * x2 - thresholds.eir_theta
+    score_margin = eir_score(x1, x2, cfg) - thresholds.eir_theta
     dist = np.abs(positions - cfg.anomaly_x)
     return pd.DataFrame(
         {
@@ -529,7 +589,7 @@ def sample_local_decisions(cfg: SimulationConfig, thresholds: LocalThresholds, s
             "dist_to_anomaly": dist,
             "x1": x1,
             "x2": x2,
-            "z_eir": z,
+            "z_eir": score_margin,
             "send_rr": rr.astype(int),
             "send_tr": tr.astype(int),
             "send_eir": eir.astype(int),
@@ -624,7 +684,6 @@ def collect_state_dynamics_metrics(cfg: SimulationConfig, thresholds: LocalThres
             deterministic_seed(
                 cfg,
                 phase="state_dynamics",
-                strategy=strategy,
                 state_h1=state_h1,
                 trial_index=trial,
             )
@@ -687,13 +746,27 @@ def run_state_dynamics_diagnostics(cfg: SimulationConfig, output_dir: Path, num_
             )
     all_df = pd.concat(dfs, ignore_index=True)
     all_df.to_csv(output_dir / "state_dynamics_trials.csv", index=False)
+    summary_rows: List[Dict[str, object]] = []
+    for (strategy, state_h1), group in all_df.groupby(["strategy", "state_h1"]):
+        row: Dict[str, object] = {
+            "strategy": strategy,
+            "state_h1": state_h1,
+            "n_trials": len(group),
+        }
+        for metric in [
+            "mean_on_fraction",
+            "mean_rising_edges_per_node",
+            "mean_on_duration_s",
+        ]:
+            _add_mean_with_interval(
+                row,
+                metric,
+                group[metric].to_numpy(dtype=float),
+                lower_bound=0.0,
+            )
+        summary_rows.append(row)
     summary = (
-        all_df.groupby(["strategy", "state_h1"], as_index=False)
-        .agg(
-            mean_on_fraction=("mean_on_fraction", "mean"),
-            mean_rising_edges_per_node=("mean_rising_edges_per_node", "mean"),
-            mean_on_duration_s=("mean_on_duration_s", "mean"),
-        )
+        pd.DataFrame(summary_rows)
         .sort_values(["state_h1", "strategy"])
         .reset_index(drop=True)
     )
@@ -801,24 +874,39 @@ def calibrate_gateway_threshold(
     num_trials: int = 250,
     *,
     seed_namespace: str = "",
-) -> float:
-    maxima = []
+    return_trials: bool = False,
+):
+    rows = []
     dummy_threshold = np.inf
     for trial in range(num_trials):
-        rng = np.random.default_rng(
-            deterministic_seed(
-                cfg,
-                phase="gateway_calibration",
-                strategy=strategy,
-                state_h1=False,
-                trial_index=trial,
-                namespace=seed_namespace,
-            )
+        scenario_seed = deterministic_seed(
+            cfg,
+            phase="gateway_calibration",
+            state_h1=False,
+            trial_index=trial,
+            namespace=seed_namespace,
         )
+        rng = np.random.default_rng(scenario_seed)
         outcome = simulate_one_trial(cfg, thresholds, dummy_threshold, strategy, False, rng)
-        maxima.append(outcome.max_gateway_evidence)
+        rows.append(
+            {
+                "strategy": strategy,
+                "state_h1": 0,
+                "trial_index": trial,
+                "scenario_seed": scenario_seed,
+                "seed_phase": "gateway_calibration",
+                "seed_namespace": seed_namespace,
+                "max_gateway_evidence": outcome.max_gateway_evidence,
+                "transmissions": outcome.transmissions,
+            }
+        )
+    records = pd.DataFrame(rows)
     q = 1.0 - cfg.gateway_false_alarm_target
-    return float(np.quantile(np.asarray(maxima), q))
+    gateway_threshold = float(np.quantile(records["max_gateway_evidence"].to_numpy(), q))
+    records["gateway_threshold"] = gateway_threshold
+    if return_trials:
+        return gateway_threshold, records
+    return gateway_threshold
 
 
 def calibrate_all_gateway_thresholds(
@@ -827,12 +915,37 @@ def calibrate_all_gateway_thresholds(
     num_trials: int = 250,
     *,
     seed_namespace: str = "",
-) -> GatewayThresholds:
-    return GatewayThresholds(
-        rr=calibrate_gateway_threshold(cfg, thresholds, "RR", num_trials=num_trials, seed_namespace=seed_namespace),
-        tr=calibrate_gateway_threshold(cfg, thresholds, "TR", num_trials=num_trials, seed_namespace=seed_namespace),
-        eir=calibrate_gateway_threshold(cfg, thresholds, "EIR", num_trials=num_trials, seed_namespace=seed_namespace),
+    return_trials: bool = False,
+    strategies: Optional[List[str]] = None,
+):
+    selected_strategies = ["RR", "TR", "EIR"] if strategies is None else list(strategies)
+    if not selected_strategies or any(s not in {"RR", "TR", "EIR"} for s in selected_strategies):
+        raise ValueError(f"Invalid strategy subset: {selected_strategies}")
+    threshold_values: Dict[str, float] = {"RR": float("nan"), "TR": float("nan"), "EIR": float("nan")}
+    calibration_frames: List[pd.DataFrame] = []
+    for strategy in selected_strategies:
+        result = calibrate_gateway_threshold(
+            cfg,
+            thresholds,
+            strategy,
+            num_trials=num_trials,
+            seed_namespace=seed_namespace,
+            return_trials=return_trials,
+        )
+        if return_trials:
+            threshold, records = result
+            calibration_frames.append(records)
+        else:
+            threshold = result
+        threshold_values[strategy] = float(threshold)
+    gateway_thresholds = GatewayThresholds(
+        rr=threshold_values["RR"],
+        tr=threshold_values["TR"],
+        eir=threshold_values["EIR"],
     )
+    if return_trials:
+        return gateway_thresholds, pd.concat(calibration_frames, ignore_index=True)
+    return gateway_thresholds
 
 
 def run_trials(
@@ -849,16 +962,14 @@ def run_trials(
     gt = {"RR": gateway_thresholds.rr, "TR": gateway_thresholds.tr, "EIR": gateway_thresholds.eir}[strategy]
     for state_h1, count in [(False, num_h0), (True, num_h1)]:
         for trial in range(count):
-            rng = np.random.default_rng(
-                deterministic_seed(
-                    cfg,
-                    phase="run_trials",
-                    strategy=strategy,
-                    state_h1=state_h1,
-                    trial_index=trial,
-                    namespace=seed_namespace,
-                )
+            scenario_seed = deterministic_seed(
+                cfg,
+                phase="evaluation",
+                state_h1=state_h1,
+                trial_index=trial,
+                namespace=seed_namespace,
             )
+            rng = np.random.default_rng(scenario_seed)
             outcome = simulate_one_trial(
                 cfg=cfg,
                 thresholds=thresholds,
@@ -871,6 +982,11 @@ def run_trials(
                 {
                     "strategy": strategy,
                     "state_h1": int(outcome.state_h1),
+                    "trial_index": trial,
+                    "scenario_seed": scenario_seed,
+                    "seed_phase": "evaluation",
+                    "seed_namespace": seed_namespace,
+                    "gateway_threshold": gt,
                     "detected": int(outcome.detected),
                     "pre_onset_alarm": int(outcome.pre_onset_alarm),
                     "detection_time": outcome.detection_time,
@@ -882,6 +998,53 @@ def run_trials(
     return pd.DataFrame(rows)
 
 
+def wilson_interval(successes: int, total: int, z: float = 1.959963984540054) -> Tuple[float, float]:
+    """Two-sided Wilson score interval for a binomial proportion."""
+    if total <= 0:
+        return float("nan"), float("nan")
+    p = float(successes) / float(total)
+    z2 = z * z
+    denominator = 1.0 + z2 / total
+    center = (p + z2 / (2.0 * total)) / denominator
+    half_width = z * np.sqrt((p * (1.0 - p) + z2 / (4.0 * total)) / total) / denominator
+    return float(max(0.0, center - half_width)), float(min(1.0, center + half_width))
+
+
+def mean_confidence_interval(values: np.ndarray, z: float = 1.959963984540054) -> Tuple[float, float]:
+    """Normal-approximation interval for a sample mean.
+
+    Phase-4 operating points use at least hundreds of trials, so the bounded
+    transmission counts and conditional delays are covered by the CLT. A
+    degenerate one-value sample is reported without artificial width.
+    """
+    sample = np.asarray(values, dtype=float)
+    sample = sample[np.isfinite(sample)]
+    if len(sample) == 0:
+        return float("nan"), float("nan")
+    mean = float(np.mean(sample))
+    if len(sample) == 1:
+        return mean, mean
+    standard_error = float(np.std(sample, ddof=1) / np.sqrt(len(sample)))
+    return mean - z * standard_error, mean + z * standard_error
+
+
+def _add_mean_with_interval(
+    row: Dict[str, object],
+    name: str,
+    values: np.ndarray,
+    *,
+    lower_bound: Optional[float] = None,
+) -> None:
+    sample = np.asarray(values, dtype=float)
+    finite = sample[np.isfinite(sample)]
+    row[name] = float(np.mean(finite)) if len(finite) else float("nan")
+    low, high = mean_confidence_interval(finite)
+    if lower_bound is not None and np.isfinite(low):
+        low = max(lower_bound, low)
+    row[f"{name}_ci_low"] = low
+    row[f"{name}_ci_high"] = high
+
+
 
 def summarize_results(df: pd.DataFrame, cfg: SimulationConfig) -> pd.DataFrame:
     rows = []
@@ -891,9 +1054,6 @@ def summarize_results(df: pd.DataFrame, cfg: SimulationConfig) -> pd.DataFrame:
         p_fa = float((h0["first_alarm_time"] < np.inf).mean()) if len(h0) else float("nan")
         p_d = float(h1["detected"].mean()) if len(h1) else float("nan")
         p_pre = float(h1["pre_onset_alarm"].mean()) if len(h1) else float("nan")
-        comm_load_all = float(group["transmissions"].mean()) * cfg.alarm_molecules
-        comm_load_h0 = float(h0["transmissions"].mean()) * cfg.alarm_molecules if len(h0) else float("nan")
-        comm_load_h1 = float(h1["transmissions"].mean()) * cfg.alarm_molecules if len(h1) else float("nan")
         detected_h1 = h1[h1["detected"] == 1]["detection_time"]
         delay = float("inf") if len(detected_h1) == 0 else float(detected_h1.mean() - cfg.anomaly_start)
         detected_h1_full = h1[h1["detected"] == 1].copy()
@@ -903,19 +1063,60 @@ def summarize_results(df: pd.DataFrame, cfg: SimulationConfig) -> pd.DataFrame:
             rate_h1 = float(np.mean(molecules / durations))
         else:
             rate_h1 = float("nan")
-        rows.append(
-            {
-                "strategy": strategy,
-                "P_D": p_d,
-                "P_pre_onset_alarm": p_pre,
-                "P_FA": p_fa,
-                "C_total_molecules_avg": comm_load_all,
-                "C_H0_molecules_avg": comm_load_h0,
-                "C_H1_molecules_avg": comm_load_h1,
-                "R_H1_molecules_per_s": rate_h1,
-                "D_avg_after_onset": delay,
-            }
+        row: Dict[str, object] = {
+            "strategy": strategy,
+            "n_H0": len(h0),
+            "n_H1": len(h1),
+            "n_detected_H1": len(detected_h1),
+            "P_D": p_d,
+            "P_pre_onset_alarm": p_pre,
+            "P_FA": p_fa,
+        }
+        for name, successes, total in [
+            ("P_D", int(h1["detected"].sum()), len(h1)),
+            ("P_pre_onset_alarm", int(h1["pre_onset_alarm"].sum()), len(h1)),
+            ("P_FA", int((h0["first_alarm_time"] < np.inf).sum()), len(h0)),
+        ]:
+            low, high = wilson_interval(successes, total)
+            row[f"{name}_ci_low"] = low
+            row[f"{name}_ci_high"] = high
+
+        _add_mean_with_interval(
+            row,
+            "C_total_molecules_avg",
+            group["transmissions"].to_numpy(dtype=float) * cfg.alarm_molecules,
+            lower_bound=0.0,
         )
+        _add_mean_with_interval(
+            row,
+            "C_H0_molecules_avg",
+            h0["transmissions"].to_numpy(dtype=float) * cfg.alarm_molecules,
+            lower_bound=0.0,
+        )
+        _add_mean_with_interval(
+            row,
+            "C_H1_molecules_avg",
+            h1["transmissions"].to_numpy(dtype=float) * cfg.alarm_molecules,
+            lower_bound=0.0,
+        )
+        rate_values = (
+            detected_h1_full["transmissions"].to_numpy(dtype=float)
+            * cfg.alarm_molecules
+            / np.maximum(
+                detected_h1_full["detection_time"].to_numpy(dtype=float) - cfg.anomaly_start,
+                cfg.dt,
+            )
+            if len(detected_h1_full)
+            else np.asarray([], dtype=float)
+        )
+        _add_mean_with_interval(row, "R_H1_molecules_per_s", rate_values, lower_bound=0.0)
+        delay_values = detected_h1.to_numpy(dtype=float) - cfg.anomaly_start
+        _add_mean_with_interval(row, "D_avg_after_onset", delay_values, lower_bound=0.0)
+        if not np.isfinite(delay):
+            row["D_avg_after_onset"] = float("inf")
+        if not np.isfinite(rate_h1):
+            row["R_H1_molecules_per_s"] = float("nan")
+        rows.append(row)
     return pd.DataFrame(rows).sort_values("strategy").reset_index(drop=True)
 
 
@@ -926,16 +1127,37 @@ def run_experiment(
     calib_trials: int = 250,
     *,
     seed_namespace: str = "",
+    return_calibration_trials: bool = False,
+    precalibrated_thresholds: Optional[LocalThresholds] = None,
+    precalibrated_gateway_thresholds: Optional[GatewayThresholds] = None,
+    strategies: Optional[List[str]] = None,
 ):
-    thresholds = calibrate_local_thresholds(cfg)
-    gateway_thresholds = calibrate_all_gateway_thresholds(
-        cfg,
-        thresholds,
-        num_trials=calib_trials,
-        seed_namespace=seed_namespace,
-    )
+    selected_strategies = ["RR", "TR", "EIR"] if strategies is None else list(strategies)
+    if not selected_strategies or any(s not in {"RR", "TR", "EIR"} for s in selected_strategies):
+        raise ValueError(f"Invalid strategy subset: {selected_strategies}")
+    overrides = (precalibrated_thresholds, precalibrated_gateway_thresholds)
+    if (overrides[0] is None) != (overrides[1] is None):
+        raise ValueError("Both local and gateway precalibrated thresholds must be supplied together.")
+    if overrides[0] is not None:
+        thresholds = overrides[0]
+        gateway_thresholds = overrides[1]
+        calibration_trials = pd.DataFrame()
+    else:
+        thresholds = calibrate_local_thresholds(cfg)
+        calibration_result = calibrate_all_gateway_thresholds(
+            cfg,
+            thresholds,
+            num_trials=calib_trials,
+            seed_namespace=seed_namespace,
+            return_trials=return_calibration_trials,
+            strategies=selected_strategies,
+        )
+        if return_calibration_trials:
+            gateway_thresholds, calibration_trials = calibration_result
+        else:
+            gateway_thresholds = calibration_result
     dfs = []
-    for strategy in ["RR", "TR", "EIR"]:
+    for strategy in selected_strategies:
         dfs.append(
             run_trials(
                 cfg,
@@ -949,6 +1171,8 @@ def run_experiment(
         )
     all_trials = pd.concat(dfs, ignore_index=True)
     summary = summarize_results(all_trials, cfg)
+    if return_calibration_trials:
+        return all_trials, summary, thresholds, gateway_thresholds, calibration_trials
     return all_trials, summary, thresholds, gateway_thresholds
 
 
@@ -959,22 +1183,52 @@ def sweep_parameter(
     num_h0: int = 150,
     num_h1: int = 150,
     calib_trials: int = 200,
-) -> pd.DataFrame:
+    *,
+    return_trials: bool = False,
+):
     rows = []
-    for value in values:
+    trial_frames: List[pd.DataFrame] = []
+    calibration_frames: List[pd.DataFrame] = []
+    sweep_started = time.time()
+    for value_index, value in enumerate(values, start=1):
+        print(
+            f"[sweep:{parameter_name}] value {value_index}/{len(values)}: {value}",
+            flush=True,
+        )
         cfg = SimulationConfig(**asdict(base_cfg))
         setattr(cfg, parameter_name, value)
         namespace = f"sweep:{parameter_name}={value}"
-        _, summary, _, _ = run_experiment(
+        result = run_experiment(
             cfg,
             num_h0=num_h0,
             num_h1=num_h1,
             calib_trials=calib_trials,
             seed_namespace=namespace,
+            return_calibration_trials=return_trials,
         )
+        if return_trials:
+            trials, summary, _, _, calibration_trials_df = result
+            trials[parameter_name] = value
+            calibration_trials_df[parameter_name] = value
+            trial_frames.append(trials)
+            calibration_frames.append(calibration_trials_df)
+        else:
+            _, summary, _, _ = result
         summary[parameter_name] = value
         rows.append(summary)
-    return pd.concat(rows, ignore_index=True)
+        print(
+            f"[sweep:{parameter_name}] completed value {value} "
+            f"in {time.time() - sweep_started:.1f}s cumulative",
+            flush=True,
+        )
+    summary_df = pd.concat(rows, ignore_index=True)
+    if return_trials:
+        return (
+            summary_df,
+            pd.concat(trial_frames, ignore_index=True),
+            pd.concat(calibration_frames, ignore_index=True),
+        )
+    return summary_df
 
 
 def plot_sweep(df: pd.DataFrame, x_col: str, y_col: str, outpath: Path, title: Optional[str] = None) -> None:
@@ -1193,7 +1447,23 @@ def run_eir_grid_search(
         "elapsed_seconds": 0.0,
     })
     print(f"[grid] starting EIR parameter grid search with {total_combos} combinations over {parameter_columns}...", flush=True)
+    print("[grid] computing one shared RR/TR reference sweep...", flush=True)
+    reference_summary, reference_trials, reference_calibration = sweep_anomaly_pair(
+        base_cfg,
+        anomaly_a1_values,
+        anomaly_a2_ratio,
+        num_h0=num_h0,
+        num_h1=num_h1,
+        calib_trials=calib_trials,
+        return_trials=True,
+        strategies=["RR", "TR"],
+    )
+    reference_summary.to_csv(output_dir / "eir_grid_reference_summary.csv", index=False)
+    reference_trials.to_csv(output_dir / "eir_grid_reference_trials.csv", index=False)
+    reference_calibration.to_csv(output_dir / "eir_grid_reference_calibration_trials.csv", index=False)
     grid_rows = []
+    eir_trial_frames: List[pd.DataFrame] = []
+    eir_calibration_frames: List[pd.DataFrame] = []
     completed = 0
     for combo in combos:
         combo_started = time.time()
@@ -1203,17 +1473,24 @@ def run_eir_grid_search(
         cfg = SimulationConfig(**asdict(base_cfg))
         for name, value in current_params.items():
             setattr(cfg, name, value)
-        df = sweep_anomaly_pair(
+        eir_summary, eir_trials, eir_calibration = sweep_anomaly_pair(
             cfg,
             anomaly_a1_values,
             anomaly_a2_ratio,
             num_h0=num_h0,
             num_h1=num_h1,
             calib_trials=calib_trials,
-        ).copy()
+            return_trials=True,
+            strategies=["EIR"],
+        )
+        df = pd.concat([reference_summary.copy(), eir_summary], ignore_index=True)
         for name, value in current_params.items():
             df[name] = value
+            eir_trials[name] = value
+            eir_calibration[name] = value
         grid_rows.append(df)
+        eir_trial_frames.append(eir_trials)
+        eir_calibration_frames.append(eir_calibration)
         completed += 1
         df_grid_partial = pd.concat(grid_rows, ignore_index=True)
         df_summary_partial = _write_grid_artifacts(
@@ -1248,6 +1525,12 @@ def run_eir_grid_search(
         target_pfa=target_pfa,
         partial=False,
     )
+    pd.concat(eir_trial_frames, ignore_index=True).to_csv(
+        output_dir / "eir_grid_eir_trials.csv", index=False
+    )
+    pd.concat(eir_calibration_frames, ignore_index=True).to_csv(
+        output_dir / "eir_grid_eir_calibration_trials.csv", index=False
+    )
     _write_grid_progress(progress_path, {
         "status": "done",
         "started_epoch": started,
@@ -1267,6 +1550,17 @@ def save_metadata(cfg: SimulationConfig, thresholds: LocalThresholds, gateway_th
         "config": asdict(cfg),
         "local_thresholds": asdict(thresholds),
         "gateway_thresholds": asdict(gateway_thresholds),
+        "statistics": {
+            "confidence_level": 0.95,
+            "binomial_interval": "Wilson score interval",
+            "mean_interval": "normal approximation: mean +/- 1.959963984540054 standard errors",
+            "common_random_scenarios_across_strategies": True,
+            "independent_seed_phases": [
+                "local_threshold_calibration",
+                "gateway_calibration",
+                "evaluation",
+            ],
+        },
     }
     outpath.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
@@ -1294,33 +1588,56 @@ def demo(
     nodes_values = [20, 40, 60, 100] if nodes_values is None else nodes_values
     delay_values = [0.0, 10.0, 30.0, 60.0, 120.0] if delay_values is None else delay_values
 
-    all_trials, summary, thresholds, gateway_thresholds = run_experiment(
+    demo_started = time.time()
+    print("[demo] starting high-confidence baseline", flush=True)
+    all_trials, summary, thresholds, gateway_thresholds, baseline_calibration_trials = run_experiment(
         cfg,
         num_h0=baseline_num_h0,
         num_h1=baseline_num_h1,
         calib_trials=baseline_calib_trials,
         seed_namespace="demo_baseline",
+        return_calibration_trials=True,
     )
     all_trials.to_csv(output_dir / "trial_results.csv", index=False)
+    baseline_calibration_trials.to_csv(output_dir / "gateway_calibration_trials.csv", index=False)
     summary.to_csv(output_dir / "summary.csv", index=False)
     save_metadata(cfg, thresholds, gateway_thresholds, output_dir / "calibration.json")
+    print(f"[demo] baseline completed in {time.time() - demo_started:.1f}s", flush=True)
 
-    df_anomaly = sweep_anomaly_pair(
+    df_anomaly, trials_anomaly, calibration_anomaly = sweep_anomaly_pair(
         cfg,
         anomaly_a1_values,
         anomaly_a2_ratio,
         num_h0=sweep_num_h0,
         num_h1=sweep_num_h1,
         calib_trials=sweep_calib_trials,
+        return_trials=True,
     )
-    df_noise = sweep_parameter(cfg, "sigma1", noise_values, num_h0=sweep_num_h0, num_h1=sweep_num_h1, calib_trials=sweep_calib_trials)
-    df_nodes = sweep_parameter(cfg, "num_nodes", [int(v) for v in nodes_values], num_h0=sweep_num_h0, num_h1=sweep_num_h1, calib_trials=sweep_calib_trials)
-    df_ti = sweep_parameter(cfg, "inference_delay", delay_values, num_h0=sweep_num_h0, num_h1=sweep_num_h1, calib_trials=sweep_calib_trials)
+    df_noise, trials_noise, calibration_noise = sweep_parameter(
+        cfg, "sigma1", noise_values, num_h0=sweep_num_h0, num_h1=sweep_num_h1,
+        calib_trials=sweep_calib_trials, return_trials=True,
+    )
+    df_nodes, trials_nodes, calibration_nodes = sweep_parameter(
+        cfg, "num_nodes", [int(v) for v in nodes_values], num_h0=sweep_num_h0,
+        num_h1=sweep_num_h1, calib_trials=sweep_calib_trials, return_trials=True,
+    )
+    df_ti, trials_ti, calibration_ti = sweep_parameter(
+        cfg, "inference_delay", delay_values, num_h0=sweep_num_h0,
+        num_h1=sweep_num_h1, calib_trials=sweep_calib_trials, return_trials=True,
+    )
 
     df_anomaly.to_csv(output_dir / "sweep_anomaly.csv", index=False)
     df_noise.to_csv(output_dir / "sweep_noise.csv", index=False)
     df_nodes.to_csv(output_dir / "sweep_nodes.csv", index=False)
     df_ti.to_csv(output_dir / "sweep_inference_delay.csv", index=False)
+    trials_anomaly.to_csv(output_dir / "sweep_anomaly_trials.csv", index=False)
+    trials_noise.to_csv(output_dir / "sweep_noise_trials.csv", index=False)
+    trials_nodes.to_csv(output_dir / "sweep_nodes_trials.csv", index=False)
+    trials_ti.to_csv(output_dir / "sweep_inference_delay_trials.csv", index=False)
+    calibration_anomaly.to_csv(output_dir / "sweep_anomaly_calibration_trials.csv", index=False)
+    calibration_noise.to_csv(output_dir / "sweep_noise_calibration_trials.csv", index=False)
+    calibration_nodes.to_csv(output_dir / "sweep_nodes_calibration_trials.csv", index=False)
+    calibration_ti.to_csv(output_dir / "sweep_inference_delay_calibration_trials.csv", index=False)
 
     plot_sweep(df_anomaly, "a1", "P_D", output_dir / "plot_detection_vs_anomaly.png", "Detection probability vs anomaly strength")
     plot_sweep(df_noise, "sigma1", "P_FA", output_dir / "plot_false_alarm_vs_noise.png", "False alarm probability vs noise")
@@ -1355,24 +1672,72 @@ def sweep_anomaly_pair(
     num_h0: int = 150,
     num_h1: int = 150,
     calib_trials: int = 200,
-) -> pd.DataFrame:
+    *,
+    return_trials: bool = False,
+    strategies: Optional[List[str]] = None,
+):
     rows = []
-    for a1 in a1_values:
+    trial_frames: List[pd.DataFrame] = []
+    calibration_frames: List[pd.DataFrame] = []
+    shared_thresholds: Optional[LocalThresholds] = None
+    shared_gateway_thresholds: Optional[GatewayThresholds] = None
+    sweep_started = time.time()
+    for value_index, a1 in enumerate(a1_values):
+        print(
+            f"[sweep:anomaly_pair] value {value_index + 1}/{len(a1_values)}: "
+            f"a1={float(a1)}, a2={float(a2_ratio) * float(a1)}",
+            flush=True,
+        )
         cfg = SimulationConfig(**asdict(base_cfg))
         cfg.a1 = float(a1)
         cfg.a2 = float(a2_ratio) * float(a1)
-        namespace = f"sweep:anomaly_pair:a1={cfg.a1}:a2={cfg.a2}"
-        _, summary, _, _ = run_experiment(
+        namespace = "sweep:anomaly_pair:shared_scenarios"
+        result = run_experiment(
             cfg,
             num_h0=num_h0,
             num_h1=num_h1,
             calib_trials=calib_trials,
             seed_namespace=namespace,
+            return_calibration_trials=return_trials,
+            precalibrated_thresholds=shared_thresholds,
+            precalibrated_gateway_thresholds=shared_gateway_thresholds,
+            strategies=strategies,
         )
+        if return_trials:
+            trials, summary, local_thresholds, gateway_thresholds, calibration_trials_df = result
+            if value_index == 0:
+                shared_thresholds = local_thresholds
+                shared_gateway_thresholds = gateway_thresholds
+            trials["a1"] = cfg.a1
+            trials["a2"] = cfg.a2
+            if not calibration_trials_df.empty:
+                calibration_trials_df["a1"] = np.nan
+                calibration_trials_df["a2"] = np.nan
+                calibration_trials_df["sweep_scope"] = "shared_all_anomaly_strengths"
+            trial_frames.append(trials)
+            if not calibration_trials_df.empty:
+                calibration_frames.append(calibration_trials_df)
+        else:
+            _, summary, local_thresholds, gateway_thresholds = result
+            if value_index == 0:
+                shared_thresholds = local_thresholds
+                shared_gateway_thresholds = gateway_thresholds
         summary["a1"] = cfg.a1
         summary["a2"] = cfg.a2
         rows.append(summary)
-    return pd.concat(rows, ignore_index=True)
+        print(
+            f"[sweep:anomaly_pair] completed a1={cfg.a1} "
+            f"in {time.time() - sweep_started:.1f}s cumulative",
+            flush=True,
+        )
+    summary_df = pd.concat(rows, ignore_index=True)
+    if return_trials:
+        return (
+            summary_df,
+            pd.concat(trial_frames, ignore_index=True),
+            pd.concat(calibration_frames, ignore_index=True),
+        )
+    return summary_df
 
 
 @dataclass
@@ -1519,7 +1884,17 @@ def load_bundle_from_config(config_path: Path) -> Tuple[SimulationConfig, RunMod
     with config_path.open('rb') as fh:
         raw = tomllib.load(fh)
 
-    sim_values = _pick_known_fields(SimulationConfig, raw.get('simulation', {}))
+    raw_simulation = dict(raw.get('simulation', {}))
+    if 'receiver_min_distance' not in raw_simulation and 'receiver_radius' in raw_simulation:
+        warnings.warn(
+            "Configuration key 'receiver_radius' is deprecated; use "
+            "'receiver_min_distance'. Its value is interpreted as an effective "
+            "near-gateway cutoff, not as a physical receiver radius.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        raw_simulation['receiver_min_distance'] = raw_simulation['receiver_radius']
+    sim_values = _pick_known_fields(SimulationConfig, raw_simulation)
     if 'eir_gate_manual' in sim_values and sim_values['eir_gate_manual'] in (0, 0.0, '', False):
         sim_values['eir_gate_manual'] = None
     cfg = SimulationConfig(**sim_values)
@@ -1614,15 +1989,20 @@ def main() -> int:
         print('EIR grid-search written to:', outdir / 'eir_grid_search')
 
     if run_modes.run_baseline or not ran_any:
-        _, summary, thresholds, gateway_thresholds = run_experiment(
+        baseline_outdir = outdir / 'baseline' if ran_any else outdir
+        baseline_outdir.mkdir(parents=True, exist_ok=True)
+        trials, summary, thresholds, gateway_thresholds, calibration_trials = run_experiment(
             cfg,
             num_h0=baseline_cfg.num_h0,
             num_h1=baseline_cfg.num_h1,
             calib_trials=baseline_cfg.calib_trials,
             seed_namespace='baseline',
+            return_calibration_trials=True,
         )
-        save_metadata(cfg, thresholds, gateway_thresholds, outdir / 'calibration.json')
-        summary.to_csv(outdir / 'summary.csv', index=False)
+        save_metadata(cfg, thresholds, gateway_thresholds, baseline_outdir / 'calibration.json')
+        trials.to_csv(baseline_outdir / 'trial_results.csv', index=False)
+        calibration_trials.to_csv(baseline_outdir / 'gateway_calibration_trials.csv', index=False)
+        summary.to_csv(baseline_outdir / 'summary.csv', index=False)
         print(summary.to_string(index=False))
         if not ran_any and not run_modes.run_baseline:
             print('No explicit run mode enabled in config; baseline was executed by default.')

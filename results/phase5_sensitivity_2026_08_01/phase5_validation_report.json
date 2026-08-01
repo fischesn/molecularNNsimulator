@@ -1,0 +1,30 @@
+{
+  "status": "passed",
+  "row_counts": {
+    "eir_grid_summary.csv": 54,
+    "eir_grid_eir_trials.csv": 81000,
+    "eir_grid_eir_calibration_trials.csv": 10800,
+    "eir_grid_reference_trials.csv": 3000,
+    "eir_grid_reference_calibration_trials.csv": 400,
+    "sensitivity_gateway_integration_tau.csv": 18,
+    "sensitivity_gateway_integration_tau_trials.csv": 10800,
+    "sensitivity_gateway_integration_tau_calibration_trials.csv": 4500,
+    "sensitivity_diffusion_coeff.csv": 18,
+    "sensitivity_diffusion_coeff_trials.csv": 10800,
+    "sensitivity_diffusion_coeff_calibration_trials.csv": 4500,
+    "sensitivity_local_send_prob_target.csv": 18,
+    "sensitivity_local_send_prob_target_trials.csv": 10800,
+    "sensitivity_local_send_prob_target_calibration_trials.csv": 4500,
+    "scaling_summary.csv": 24,
+    "scaling_trials.csv": 14400,
+    "scaling_calibration_trials.csv": 12000
+  },
+  "checks": [
+    "expected row counts",
+    "54 unique grid configurations",
+    "disjoint calibration/evaluation seeds",
+    "paired RR/TR grid reference scenarios",
+    "paired RR/TR/EIR sensitivity scenarios",
+    "paired RR/TR/EIR scaling scenarios"
+  ]
+}

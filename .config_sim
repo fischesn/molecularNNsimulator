@@ -68,7 +68,7 @@ channel_model = "diffusive_1d"   # "diffusive_1d" or "legacy_linear"
 diffusion_coeff = 3000.0          # um^2 / s
 drift_velocity = 0.0              # um / s
 channel_decay_rate = 0.0          # 1 / s
-receiver_radius = 5.0             # um; avoids singularity near gateway
+receiver_min_distance = 5.0       # um; effective near-gateway cutoff
 receiver_gain = 1.0
 
 # Gateway evidence accumulation
@@ -97,32 +97,32 @@ random_seed = 13
 # Select what the simulator should execute.
 # If all four are false, the simulator falls back to a baseline run.
 output_dir = "run_v20"
-run_baseline = true
+run_baseline = false
 run_diagnostics = true
 run_demo = true
 run_eir_grid_search = false
 
 [baseline]
 # Counts for a plain baseline run.
-num_h0 = 120
-num_h1 = 120
-calib_trials = 150
+num_h0 = 1000
+num_h1 = 1000
+calib_trials = 1000
 
 [diagnostics]
 # Counts for local / state-dynamics diagnostics.
 num_samples = 5000
-num_trials_state = 100
+num_trials_state = 250
 
 [demo]
 # Counts for the full demo run.
 # Baseline part of the demo:
-baseline_num_h0 = 250
-baseline_num_h1 = 250
-baseline_calib_trials = 250
+baseline_num_h0 = 1000
+baseline_num_h1 = 1000
+baseline_calib_trials = 1000
 # Parameter sweeps inside the demo:
-sweep_num_h0 = 150
-sweep_num_h1 = 150
-sweep_calib_trials = 200
+sweep_num_h0 = 500
+sweep_num_h1 = 500
+sweep_calib_trials = 500
 
 [sweeps]
 # Default sweep values used by demo runs and by EIR grid-search aggregation.

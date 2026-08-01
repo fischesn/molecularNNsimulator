@@ -1,0 +1,152 @@
+{
+  "simulation": {
+    "L": 1000.0,
+    "gateway_x": 0.0,
+    "anomaly_x": 750.0,
+    "dt": 1.0,
+    "t_max": 300.0,
+    "anomaly_start": 30.0,
+    "num_nodes": 50,
+    "mu1_h0": 0.2,
+    "mu2_h0": 0.1,
+    "sigma1": 0.16,
+    "sigma2": 0.05,
+    "a1": 0.3,
+    "a2": 0.12,
+    "lambda1": 250.0,
+    "lambda2": 200.0,
+    "w1": 1.0,
+    "w2": 0.9,
+    "inference_delay": 20.0,
+    "use_eir_gate": true,
+    "eir_gate_quantile": 0.85,
+    "eir_gate_manual": null,
+    "use_hysteresis": true,
+    "hysteresis_margin_rr": 0.0,
+    "hysteresis_margin_tr": 0.005,
+    "hysteresis_margin_eir": 0.03,
+    "gate_hysteresis_margin": 0.01,
+    "tau0": 5.0,
+    "kappa_delay": 0.05,
+    "lambda_c": 400.0,
+    "channel_spread_steps": 3,
+    "channel_model": "diffusive_1d",
+    "diffusion_coeff": 3000.0,
+    "drift_velocity": 0.0,
+    "channel_decay_rate": 0.0,
+    "receiver_min_distance": 5.0,
+    "receiver_gain": 1.0,
+    "gateway_evidence_mode": "leaky_integrator",
+    "gateway_integration_tau": 20.0,
+    "alarm_molecules": 100.0,
+    "local_send_prob_target": 0.02,
+    "gateway_false_alarm_target": 0.05,
+    "edge_triggered": true,
+    "refractory_period": 10.0,
+    "allow_refresh_if_still_positive": false,
+    "refresh_period": 60.0,
+    "use_temporal_correlation": true,
+    "temporal_alpha": 0.85,
+    "random_seed": 13
+  },
+  "run_modes": {
+    "output_dir": "phase4_camera_ready_2026_08_01",
+    "run_baseline": false,
+    "run_diagnostics": true,
+    "run_demo": true,
+    "run_eir_grid_search": false
+  },
+  "baseline": {
+    "num_h0": 1000,
+    "num_h1": 1000,
+    "calib_trials": 1000
+  },
+  "diagnostics": {
+    "num_samples": 5000,
+    "num_trials_state": 250
+  },
+  "demo": {
+    "baseline_num_h0": 1000,
+    "baseline_num_h1": 1000,
+    "baseline_calib_trials": 1000,
+    "sweep_num_h0": 500,
+    "sweep_num_h1": 500,
+    "sweep_calib_trials": 500
+  },
+  "sweeps": {
+    "anomaly_a1_values": [
+      0.03,
+      0.06,
+      0.1,
+      0.15,
+      0.2
+    ],
+    "anomaly_a2_ratio": 0.4,
+    "noise_values": [
+      0.08,
+      0.12,
+      0.16,
+      0.2
+    ],
+    "nodes_values": [
+      20,
+      40,
+      60,
+      100
+    ],
+    "delay_values": [
+      0.0,
+      10.0,
+      30.0,
+      60.0,
+      120.0
+    ]
+  },
+  "eir_grid": {
+    "gate_values": [
+      0.84,
+      0.85,
+      0.86
+    ],
+    "hysteresis_values": [
+      0.02,
+      0.03,
+      0.04
+    ],
+    "gate_hysteresis_values": [
+      0.01,
+      0.02,
+      0.03
+    ],
+    "w2_values": [
+      0.75,
+      0.9
+    ],
+    "parameter_values": {
+      "eir_gate_quantile": [
+        0.84,
+        0.85,
+        0.86
+      ],
+      "hysteresis_margin_eir": [
+        0.02,
+        0.03,
+        0.04
+      ],
+      "gate_hysteresis_margin": [
+        0.01,
+        0.02,
+        0.03
+      ],
+      "w2": [
+        0.75,
+        0.9
+      ]
+    },
+    "focus_max_a1": 0.1,
+    "target_pfa": 0.05,
+    "num_h0": 150,
+    "num_h1": 150,
+    "calib_trials": 200
+  }
+}

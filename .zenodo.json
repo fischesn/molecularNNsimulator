@@ -1,0 +1,27 @@
+{
+  "title": "DNA NN Simulator v2.1: GLOBECOM 2026 camera-ready data and sensitivity studies",
+  "upload_type": "software",
+  "description": "Corrected simulator, configurations, regression tests, trial-level Monte Carlo data, calibration samples, summaries, and validation reports supporting the camera-ready version of '6G Network Empowering AI Agents'. The release adds high-confidence primary sweeps, a 54-configuration EIR robustness grid, physical-parameter sensitivities, and fixed-length and constant-density scaling studies.",
+  "creators": [
+    {
+      "name": "Fischer, Stefan",
+      "affiliation": "University of Luebeck"
+    }
+  ],
+  "keywords": [
+    "molecular communication",
+    "DNA strand displacement",
+    "embedded inference",
+    "6G",
+    "nanoscale networks",
+    "reproducible simulation"
+  ],
+  "license": "MIT",
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/fischesn/molecularNNsimulator",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}

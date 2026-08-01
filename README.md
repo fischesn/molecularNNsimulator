@@ -2,6 +2,20 @@
 
 A Python simulator for studying distributed anomaly detection and communication-efficiency trade-offs in DNA-inspired / molecular nanonetworks.
 
+## GLOBECOM 2026 camera-ready artifact (v2.1)
+
+Release v2.1 adds the corrected simulator, regression tests, and the complete
+trial-level data used for the camera-ready version of *6G Network Empowering AI
+Agents*. The archived artifact contains the high-confidence primary sweeps,
+the 54-configuration EIR robustness grid, physical-parameter sensitivities,
+and two scaling studies. See [`CAMERA_READY_DATA.md`](CAMERA_READY_DATA.md) for
+the data dictionary, validation commands, and exact reproduction workflow.
+
+The stable archival identifier is the Zenodo concept DOI
+[`10.5281/zenodo.19416612`](https://doi.org/10.5281/zenodo.19416612); it always
+resolves to the newest archived release. Release-specific identifiers are
+listed in the corresponding GitHub release and Zenodo record.
+
 The simulator compares three local decision strategies:
 
 - **RR** — raw reporting based on two local marker thresholds
