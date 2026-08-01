@@ -20,7 +20,8 @@ calibration samples, and validation reports.
 - `phase5_validate_results.py`: row-count, seed-separation, and paired-scenario
   validation.
 - `results/phase4_camera_ready_2026_08_01/`: Phase-4 summaries, trial-level
-  data, calibration samples, plots, effective configuration, and metadata.
+  data, calibration samples, local-state diagnostics, plots, effective
+  configuration, and metadata.
 - `results/phase5_sensitivity_2026_08_01/`: Phase-5 robustness, sensitivity,
   and scaling data with a machine-readable validation report.
 - `CAMERA_READY_SHA256.csv`: SHA-256 checksums and byte sizes for all released
@@ -64,6 +65,8 @@ report 27 passing tests.
 - Communication-load curves: Phase-4 `sweep_nodes.csv` plus trial-level data.
 - Delay/trade-off results: Phase-4 `sweep_inference_delay.csv` plus trial-level
   data.
+- Local ON-state and transition statistics: Phase-4
+  `diagnostics/state_dynamics_summary.csv` plus trial-level diagnostics.
 - Robustness claim: Phase-5 `eir_grid_search/eir_grid_summary.csv` and
   `phase5_robust_summary.json`.
 - Transport and scaling limits: Phase-5 `scaling_summary.csv` and
